@@ -4,6 +4,10 @@ import re
 
 main_url = "https://www.olx.uz"
 
+def get_text_or_default(parent, tag, cls, default="None"):
+    el = parent.find(tag, class_=cls)
+    return el.get_text(strip=True) if el else default
+
 def parse_category_urls(url):
     category_urls = []
 
@@ -29,30 +33,22 @@ def parse_products_from_category(category_url):
 
 def parse_product_details(product):
     title = product.find("h4", class_="css-hzlye5")
-    if title:
-        title = title.get_text()
-    else:
-        title = "Some error in title parsing"
+    title = title.get_text() if title else "None"
+
     price = product.find("p", class_="css-blr5zl")
-    if price:
-        price = price.get_text()
-    else:
-        price = "Some error in price parsing"
+    price = price.get_text() if price else "None"
+
     location_and_date = product.find("p", class_="css-1b24pxk")
-    if location_and_date:
-        location_and_date = location_and_date.get_text()
-    else:
-        location_and_date = "Some error in location and date parsing"
+    location_and_date = location_and_date.get_text() if location_and_date else "None"
+
     status = product.find("span", class_="css-1mqzepw")
-    if status:
-        status = status.get_text()
-    else:
-        status = "Some error in status parsing"
+    status = status.get_text() if status else "None"
+
     return {
         "title": title,
         "price": price,
         "status": status,
-        "location-and-date": location_and_date
+        "location-and-date": location_and_date,
     }
 
 def parse_price_value(text: str):
@@ -67,14 +63,78 @@ def parse_price_value(text: str):
 
     value = float(m.group(1).replace(",", "."))
 
-    if "y.e" in text or "€" in text or "eur" in text:
-        currency = "EUR"
-    elif "usd" in text or "$" in text:
+    if "y.e" in text or "eur" in text or "$" in text:
         currency = "USD"
     else:
         currency = "UZS"
 
     return value, currency
+
+def extract_products_links(products):
+    links = []
+
+    for product in products:
+        a = product.find("a", href=True)
+        if not a:
+            continue
+
+        href = a["href"]
+        if not href.startswith("http"):
+            href = main_url + href
+
+        links.append(href)
+
+    return links
+
+def parse_real_estate_details(ad_url):
+    resp = requests.get(ad_url)
+    resp.raise_for_status()
+    soup = bs4.BeautifulSoup(resp.text, "html.parser")
+
+    details = {}
+
+    details["title"] = get_text_or_default(soup, "h4", "css-1au435n")
+    details["date"] = get_text_or_default(soup, "span", "css-7b83xv")
+    location_div = soup.find("div", class_="css-1deibjd")
+    details["precise_location"] = get_text_or_default(location_div, "p", "css-9pna1a")
+    details["location"] = get_text_or_default(location_div, "p", "css-3cz5o2")
+    details["ID"] = get_text_or_default(soup, "span", "css-ooacec")
+
+    for row in soup.select("div[data-testid='ad-parameters'] div"):
+        key = row.select_one("span").get_text(strip=True)
+        value = row.select("span")[1].get_text(strip=True)
+        details[key] = value
+
+    description = soup.select_one("div[data-testid='ad-description']")
+    if description:
+        details["Описание"] = description.get_text(strip=True)
+
+    return details
+
+class RealEstate:
+    def __init__(self, base, building_details):
+        self.base = base
+        self.building_details = building_details
+
+    def format(self):
+        lines = [f"🏠 {self.base['title']}",
+                 "",
+                 f"Область: {self.building_details.get('Область')}",
+                 f"Город: {self.building_details.get('Город')}",
+                 f"Район: {self.building_details.get('Район')}",
+                 "",
+                 f"ID: {self.building_details.get('ID')}",
+                 ""]
+
+        for k, v in self.building_details.items():
+            if k in ("Область", "Город", "Район", "ID"):
+                continue
+            lines.append(f"{k}: {v}")
+
+        lines.append("")
+        lines.append(f"Цена: {self.base['price']}")
+
+        return "\n".join(lines)
 
 
 class Query:
@@ -146,9 +206,18 @@ results = []
 
 for category_url in parse_category_urls(main_url):
     products = parse_products_from_category(category_url)
+
+    # специальная логика для недвижимости
+    if category_url == "https://www.olx.uz/nedvizhimost/":
+        products = parse_products_from_category(category_url + "kvartiry/")
+        product_links = extract_products_links(products)
+        for link in product_links:
+            building_details = parse_real_estate_details(link)
+            print(building_details)
+
     for product in products:
         details = parse_product_details(product)
 
         if filters.match(details):
-            print(details)
-
+            pass
+            #print(details)
