@@ -1,48 +1,92 @@
 import requests, bs4
 import json
 import re
+from urllib.parse import urljoin
+import time
+import logging
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+logger = logging.getLogger(__name__)
 
 main_url = "https://www.olx.uz"
 
+# Настройка сессии с retry и тайм-аутом
+SESSION = requests.Session()
+RETRY_STRATEGY = Retry(
+    total=3,
+    backoff_factor=0.5,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET", "POST"]
+)
+ADAPTER = HTTPAdapter(max_retries=RETRY_STRATEGY)
+SESSION.mount("https://", ADAPTER)
+SESSION.mount("http://", ADAPTER)
+SESSION.headers.update({"User-Agent": "Mozilla/5.0 (compatible; olx-scraper/1.0)"})
+DEFAULT_TIMEOUT = 10  # seconds
+REQUEST_DELAY = 0.2   # seconds между запросами (rate limit)
+
+
+def fetch(url: str, timeout: int = DEFAULT_TIMEOUT) -> str | None:
+    try:
+        resp = SESSION.get(url, timeout=timeout)
+        resp.raise_for_status()
+        time.sleep(REQUEST_DELAY)
+        return resp.text
+    except Exception as e:
+        logger.error("Ошибка запроса %s: %s", url, e)
+        return None
+
+
 def get_text_or_default(parent, tag, cls, default="None"):
+    if parent is None:
+        return default
     el = parent.find(tag, class_=cls)
     return el.get_text(strip=True) if el else default
+
 
 def parse_category_urls(url):
     category_urls = []
 
-    res = requests.get(url)
-    res.raise_for_status()
-    soup = bs4.BeautifulSoup(res.text, 'html.parser')
+    text = fetch(url)
+    if not text:
+        return category_urls
+
+    soup = bs4.BeautifulSoup(text, 'html.parser')
     category = soup.find_all("div", class_="css-1rwzo2t")
-    link_tag = category[0].find_all("a") # очень странно список в 1 элемент
+    if not category:
+        return category_urls
+    link_tag = category[0].find_all("a")
     for link in link_tag:
-        href = link.get("href") # href последней категории очень длинный
-        if link_tag[-1] != link:  # пропускаем последний элемент потому что там уже абсолютный URL
-            category_urls.append(url + href)
+        href = link.get("href")
+        if not href:
+            continue
+        # используем urljoin для корректной сборки URL
+        if link_tag[-1] != link:
+            category_urls.append(urljoin(url, href))
         else:
-            category_urls.append(href)
+            category_urls.append(href if href.startswith('http') else urljoin(url, href))
     return category_urls
 
+
 def parse_products_from_category(category_url):
-    resp = requests.get(category_url)
-    resp.raise_for_status()
-    category_soup = bs4.BeautifulSoup(resp.text, 'html.parser')
-    items = category_soup.find("div", class_="css-j0t2x2").find_all("div", class_="css-1sw7q4x")
-    return items
+    text = fetch(category_url)
+    if not text:
+        return []
+    category_soup = bs4.BeautifulSoup(text, 'html.parser')
+    container = category_soup.find("div", class_="css-j0t2x2")
+    if not container:
+        return []
+    items = container.find_all("div", class_="css-1sw7q4x")
+    return items or []
+
 
 def parse_product_details(product):
-    title = product.find("h4", class_="css-hzlye5")
-    title = title.get_text() if title else "None"
-
-    price = product.find("p", class_="css-blr5zl")
-    price = price.get_text() if price else "None"
-
-    location_and_date = product.find("p", class_="css-1b24pxk")
-    location_and_date = location_and_date.get_text() if location_and_date else "None"
-
-    status = product.find("span", class_="css-1mqzepw")
-    status = status.get_text() if status else "None"
+    # Используем helper get_text_or_default для безопасности
+    title = get_text_or_default(product, "h4", "css-hzlye5")
+    price = get_text_or_default(product, "p", "css-blr5zl")
+    location_and_date = get_text_or_default(product, "p", "css-1b24pxk")
+    status = get_text_or_default(product, "span", "css-1mqzepw")
 
     return {
         "title": title,
@@ -51,24 +95,6 @@ def parse_product_details(product):
         "location-and-date": location_and_date,
     }
 
-def parse_price_value(text: str):
-    text = text.lower().replace(" ", "")
-
-    if "договор" in text:
-        return None, "NEGOTIABLE"
-
-    m = re.search(r'(\d+(?:[.,]\d+)?)', text)
-    if not m:
-        return None, "UNKNOWN"
-
-    value = float(m.group(1).replace(",", "."))
-
-    if "y.e" in text or "eur" in text or "$" in text:
-        currency = "USD"
-    else:
-        currency = "UZS"
-
-    return value, currency
 
 def extract_products_links(products):
     links = []
@@ -80,16 +106,18 @@ def extract_products_links(products):
 
         href = a["href"]
         if not href.startswith("http"):
-            href = main_url + href
+            href = urljoin(main_url, href)
 
         links.append(href)
 
     return links
 
+
 def parse_real_estate_details(ad_url):
-    resp = requests.get(ad_url)
-    resp.raise_for_status()
-    soup = bs4.BeautifulSoup(resp.text, "html.parser")
+    text = fetch(ad_url)
+    if not text:
+        return {}
+    soup = bs4.BeautifulSoup(text, "html.parser")
 
     details = {}
 
@@ -100,17 +128,21 @@ def parse_real_estate_details(ad_url):
     details["precise_location"] = get_text_or_default(location_div, "p", "css-9pna1a")
     details["location"] = get_text_or_default(location_div, "p", "css-3cz5o2")
     parameters_div = soup.find("div", class_="css-6zsv65")
-    parameters_containers = parameters_div.find_all("p", class_="css-13x8d99")
     parameters_list = []
-    for parameter in parameters_containers:
-        parameter = parameter.get_text()
-        parameters_list.append(parameter)
+    if parameters_div:
+        parameters_containers = parameters_div.find_all("p", class_="css-13x8d99")
+        for parameter in parameters_containers:
+            parameter = parameter.get_text()
+            parameters_list.append(parameter)
     details["parameters"] = parameters_list
     details["ID"] = get_text_or_default(soup, "span", "css-ooacec")
 
     for row in soup.select("div[data-testid='ad-parameters'] div"):
-        key = row.select_one("span").get_text(strip=True)
-        value = row.select("span")[1].get_text(strip=True)
+        spans = row.select("span")
+        if len(spans) < 2:
+            continue
+        key = spans[0].get_text(strip=True)
+        value = spans[1].get_text(strip=True)
         details[key] = value
 
     description = soup.select_one("div[data-testid='ad-description']")
@@ -118,6 +150,7 @@ def parse_real_estate_details(ad_url):
         details["Описание"] = description.get_text(strip=True)
 
     return details
+
 
 class RealEstate:
     def __init__(self, base, building_details):
@@ -143,6 +176,41 @@ class RealEstate:
         lines.append(f"Цена: {self.base['price']}")
 
         return "\n".join(lines)
+
+def parse_price_value(text: str):
+    """Парсит строку цены и возвращает (value: float|None, currency: str).
+    Поддерживает UZS, USD, EUR и пометки вроде 'договор'/'торг'.
+    """
+    if not text:
+        return None, "UNKNOWN"
+
+    s = text.lower().replace('\u00A0', ' ').strip()
+
+    # если указано, что цена по договорённости
+    if 'договор' in s or 'торг' in s or 'по договорённости' in s:
+        return None, 'NEGOTIABLE'
+
+    # Ищем число (с возможными разделителями тысяч/десятичных)
+    m = re.search(r"(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)", s)
+    if not m:
+        return None, 'UNKNOWN'
+
+    num = m.group(1)
+    # удаляем пробелы в тысячах
+    num = num.replace('\u00A0', '').replace(' ', '').replace(',', '.')
+    try:
+        value = float(num)
+    except ValueError:
+        return None, 'UNKNOWN'
+
+    # Определяем валюту
+    if '$' in s or 'usd' in s or 'y.e' in s:
+        currency = 'USD'
+    else:
+        # если явно не указано — считаем UZS
+        currency = 'UZS'
+
+    return value, currency
 
 
 class Query:
@@ -213,19 +281,34 @@ filters = (Filters()
 results = []
 
 for category_url in parse_category_urls(main_url):
-    products = parse_products_from_category(category_url)
+    try:
+        products = parse_products_from_category(category_url)
 
-    # специальная логика для недвижимости
-    if category_url == "https://www.olx.uz/nedvizhimost/":
-        products = parse_products_from_category(category_url + "kvartiry/")
-        product_links = extract_products_links(products)
-        for link in product_links:
-            building_details = parse_real_estate_details(link)
-            print(building_details)
+        # специальная логика для недвижимости
+        if category_url == urljoin(main_url, "nedvizhimost/") or category_url.rstrip('/') == "https://www.olx.uz/nedvizhimost":
+            try:
+                products = parse_products_from_category(urljoin(category_url, "kvartiry/"))
+                product_links = extract_products_links(products)
+                for link in product_links:
+                    try:
+                        building_details = parse_real_estate_details(link)
+                        print(building_details)
+                    except Exception as e:
+                        logger.exception("Ошибка парсинга детали недвижимости %s: %s", link, e)
+            except Exception as e:
+                logger.exception("Ошибка получения раздела недвижимости: %s", e)
 
-    for product in products:
-        details = parse_product_details(product)
+        for product in products:
+            try:
+                details = parse_product_details(product)
 
-        if filters.match(details):
-            pass
-            #print(details)
+                if filters.match(details):
+                    pass
+                    #print(details)
+            except Exception as e:
+                logger.exception("Ошибка парсинга объявления в %s: %s", category_url, e)
+    except Exception as e:
+        logger.exception("Ошибка обработки категории %s: %s", category_url, e)
+
+
+

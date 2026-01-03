@@ -144,71 +144,6 @@ class PostgresHandler:
             logger.error(f"Ошибка инициализации базы данных: {e}")
             raise
 
-    # Методы для работы с пользователями
-    async def get_faculty_counts(self) -> Dict[str, int]:
-        """Возвращает словарь {faculty_name: count} для всех факультетов.
-        Если в базе нет факультета из DEFAULT_FACULTIES — возвращаем 0 для него."""
-        query = """
-                SELECT faculty, COUNT(*)::int AS cnt
-                FROM users
-                WHERE faculty IS NOT NULL
-                GROUP BY faculty; \
-                """
-        counts = {f: 0 for f in DEFAULT_FACULTIES}
-        try:
-            async with self.pool.acquire() as conn:
-                rows = await conn.fetch(query)
-                for r in rows:
-                    name = r['faculty']
-                    cnt = r['cnt']
-                    if name not in counts:
-                        # если в БД есть неожиданный факультет — добавим его в словарь
-                        counts[name] = cnt
-                    else:
-                        counts[name] = cnt
-            logger.info(f"Faculty counts: {counts}")
-            return counts
-        except Exception as e:
-            logger.exception(f"Error while getting faculty counts: {e}")
-            # в случае ошибки — вернуть равномерные нули, чтобы система всё равно работала
-            return {f: 0 for f in DEFAULT_FACULTIES}
-
-    async def assign_faculty(self, conn: asyncpg.Connection) -> str:
-        """Выбирает факультет с минимальным количеством участников.
-        Защищено от гонок с помощью pg_advisory_xact_lock — поэтому вызывайте внутри транзакции.
-
-        Возвращает имя выбранного факультета (str).
-        """
-        # Задаём фиксированный ключ advisory lock'а (bigint). Можно выбрать любое число.
-        advisory_key = 1234567890123456789
-        # Заблокируем на уровне транзакции (работает только в рамках текущей транзакции)
-        await conn.execute('SELECT pg_advisory_xact_lock($1);', advisory_key)
-
-        # Получаем актуальные счётчики прямо из БД (внутри блокировки/транзакции)
-        q = """
-            SELECT faculty, COUNT(*)::int AS cnt
-            FROM users
-            WHERE faculty IS NOT NULL
-            GROUP BY faculty; \
-            """
-        rows = await conn.fetch(q)
-        counts = {f: 0 for f in DEFAULT_FACULTIES}
-        for r in rows:
-            counts[r['faculty']] = r['cnt']
-
-        logger.info(f"assign_faculty — counts inside tx: {counts}")
-        min_count = min(counts.values())
-        min_faculties = [f for f, c in counts.items() if c == min_count]
-
-        # если все равны — выбираем случайно по полному списку
-        if len(min_faculties) == len(DEFAULT_FACULTIES):
-            chosen = random.choice(DEFAULT_FACULTIES)
-        else:
-            chosen = random.choice(min_faculties)
-
-        logger.info(f"assign_faculty -> chosen: {chosen} (min_candidates={min_faculties}, min_count={min_count})")
-        return chosen
-
     async def add_user(self,
                        user_id: int,
                        username: Optional[str] = None,
@@ -356,23 +291,6 @@ class PostgresHandler:
                 return True
         except Exception as e:
             logger.error(f"Ошибка установки состояния пользователя {user_id}: {e}")
-            return False
-
-
-    async def set_user_faculty(self, user_id: int, new_faculty: str) -> bool:
-        q = """
-        UPDATE users
-        SET faculty = $1,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = $2
-        RETURNING user_id;
-        """
-        try:
-            async with self.pool.acquire() as conn:
-                row = await conn.fetchrow(q, new_faculty, user_id)
-                return bool(row)
-        except Exception as e:
-            logger.exception(f"Error changing faculty for {user_id}: {e}")
             return False
 
 
