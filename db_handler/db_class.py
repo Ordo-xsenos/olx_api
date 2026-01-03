@@ -1,22 +1,30 @@
 import asyncpg
 from typing import Optional, List, Dict, Any
 import logging
-import random
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     ch = logging.StreamHandler()
-    ch.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    ch.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     logger.addHandler(ch)
 
-DEFAULT_FACULTIES = ['Gryffindor', 'Hufflepuff', 'Ravenclaw', 'Slytherin']
+DEFAULT_FACULTIES = ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"]
+
 
 class PostgresHandler:
     """Класс для работы с PostgreSQL базой данных через asyncpg"""
 
-    def __init__(self, host: str = None, port: int = None, user: str = None, password: str = None, database: str = None, dsn: Optional[str] = None):
+    def __init__(
+        self,
+        host: str = None,
+        port: int = None,
+        user: str = None,
+        password: str = None,
+        database: str = None,
+        dsn: Optional[str] = None,
+    ):
         self.host = host
         self.port = port
         self.user = user
@@ -29,9 +37,23 @@ class PostgresHandler:
         """Создание пула соединений с базой данных"""
         try:
             if self.dsn:
-                self.pool = await asyncpg.create_pool(dsn=self.dsn, min_size=min_size, max_size=max_size, statement_cache_size=0)
+                self.pool = await asyncpg.create_pool(
+                    dsn=self.dsn,
+                    min_size=min_size,
+                    max_size=max_size,
+                    statement_cache_size=0,
+                )
             else:
-                self.pool = await asyncpg.create_pool(host=self.host, port=self.port, user=self.user, password=self.password, database=self.database, min_size=min_size, max_size=max_size, statement_cache_size=0)
+                self.pool = await asyncpg.create_pool(
+                    host=self.host,
+                    port=self.port,
+                    user=self.user,
+                    password=self.password,
+                    database=self.database,
+                    min_size=min_size,
+                    max_size=max_size,
+                    statement_cache_size=0,
+                )
             logger.info("Пул соединений успешно создан")
         except Exception as e:
             logger.error(f"Ошибка создания пула соединений: {e}")
@@ -76,7 +98,7 @@ class PostgresHandler:
                                  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                                  ); \
                              """
-        #language=postgresql
+        # language=postgresql
         create_messages_table = """
                                 CREATE TABLE IF NOT EXISTS messages \
                                 ( \
@@ -127,7 +149,7 @@ class PostgresHandler:
         create_indexes = [
             "CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);",
             "CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);",
-            "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);"
+            "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);",
         ]
 
         try:
@@ -144,15 +166,17 @@ class PostgresHandler:
             logger.error(f"Ошибка инициализации базы данных: {e}")
             raise
 
-    async def add_user(self,
-                       user_id: int,
-                       username: Optional[str] = None,
-                       first_name: Optional[str] = None,
-                       last_name: Optional[str] = None,
-                       is_bot: bool = False,
-                       language_code: Optional[str] = None,
-                       faculty: Optional[str] = None,
-                       rating: int = 1) -> bool:
+    async def add_user(
+        self,
+        user_id: int,
+        username: Optional[str] = None,
+        first_name: Optional[str] = None,
+        last_name: Optional[str] = None,
+        is_bot: bool = False,
+        language_code: Optional[str] = None,
+        faculty: Optional[str] = None,
+        rating: int = 1,
+    ) -> bool:
         """Добавляет пользователя или обновляет его. Если faculty не указан — выберет автоматически.
 
         Защита от гонок реализована: мы начинаем транзакцию и внутри вызываем assign_faculty,
@@ -183,7 +207,17 @@ class PostgresHandler:
                                rating = EXCLUDED.rating,
                                updated_at = CURRENT_TIMESTAMP; \
                                """
-                    await conn.execute(insert_q, user_id, username, first_name, last_name, is_bot, language_code, faculty, rating)
+                    await conn.execute(
+                        insert_q,
+                        user_id,
+                        username,
+                        first_name,
+                        last_name,
+                        is_bot,
+                        language_code,
+                        faculty,
+                        rating,
+                    )
                     logger.info(f"User {user_id} added/updated with faculty={faculty}")
             return True
         except Exception as e:
@@ -224,8 +258,13 @@ class PostgresHandler:
             return False
 
     # Методы для работы с сообщениями
-    async def add_message(self, user_id: int, message_id: int,
-                          text: str = None, message_type: str = "text") -> bool:
+    async def add_message(
+        self,
+        user_id: int,
+        message_id: int,
+        text: str = None,
+        message_type: str = "text",
+    ) -> bool:
         """Добавление сообщения"""
         query = """
                 INSERT INTO messages (user_id, message_id, text, message_type)
@@ -239,7 +278,9 @@ class PostgresHandler:
             logger.error(f"Ошибка добавления сообщения: {e}")
             return False
 
-    async def get_user_messages(self, user_id: int, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_user_messages(
+        self, user_id: int, limit: int = 100
+    ) -> List[Dict[str, Any]]:
         """Получение сообщений пользователя"""
         query = """
                 SELECT * \
@@ -274,8 +315,9 @@ class PostgresHandler:
             return 0
 
     # Методы для работы с состояниями пользователей
-    async def set_user_state(self, user_id: int, state: str,
-                             data: Dict[str, Any] = None) -> bool:
+    async def set_user_state(
+        self, user_id: int, state: str, data: Dict[str, Any] = None
+    ) -> bool:
         """Установка состояния пользователя"""
         query = """
                 INSERT INTO user_states (user_id, state, data, updated_at)
@@ -292,7 +334,6 @@ class PostgresHandler:
         except Exception as e:
             logger.error(f"Ошибка установки состояния пользователя {user_id}: {e}")
             return False
-
 
     async def get_user_state(self, user_id: int) -> Optional[Dict[str, Any]]:
         """Получение состояния пользователя"""
@@ -362,13 +403,17 @@ class PostgresHandler:
         try:
             async with self.pool.acquire() as conn:
                 users_count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
-                messages_count = await conn.fetchval("SELECT COUNT(*) FROM messages") or 0
-                active_states = await conn.fetchval("SELECT COUNT(*) FROM user_states") or 0
+                messages_count = (
+                    await conn.fetchval("SELECT COUNT(*) FROM messages") or 0
+                )
+                active_states = (
+                    await conn.fetchval("SELECT COUNT(*) FROM user_states") or 0
+                )
 
                 return {
                     "users": users_count,
                     "messages": messages_count,
-                    "active_states": active_states
+                    "active_states": active_states,
                 }
         except Exception as e:
             logger.error(f"Ошибка получения статистики: {e}")

@@ -1,4 +1,5 @@
-import requests, bs4
+import requests
+import bs4
 import json
 import re
 from urllib.parse import urljoin
@@ -17,14 +18,14 @@ RETRY_STRATEGY = Retry(
     total=3,
     backoff_factor=0.5,
     status_forcelist=[429, 500, 502, 503, 504],
-    allowed_methods=["GET", "POST"]
+    allowed_methods=["GET", "POST"],
 )
 ADAPTER = HTTPAdapter(max_retries=RETRY_STRATEGY)
 SESSION.mount("https://", ADAPTER)
 SESSION.mount("http://", ADAPTER)
 SESSION.headers.update({"User-Agent": "Mozilla/5.0 (compatible; olx-scraper/1.0)"})
 DEFAULT_TIMEOUT = 10  # seconds
-REQUEST_DELAY = 0.2   # seconds между запросами (rate limit)
+REQUEST_DELAY = 0.2  # seconds между запросами (rate limit)
 
 
 def fetch(url: str, timeout: int = DEFAULT_TIMEOUT) -> str | None:
@@ -52,7 +53,7 @@ def parse_category_urls(url):
     if not text:
         return category_urls
 
-    soup = bs4.BeautifulSoup(text, 'html.parser')
+    soup = bs4.BeautifulSoup(text, "html.parser")
     category = soup.find_all("div", class_="css-1rwzo2t")
     if not category:
         return category_urls
@@ -65,7 +66,9 @@ def parse_category_urls(url):
         if link_tag[-1] != link:
             category_urls.append(urljoin(url, href))
         else:
-            category_urls.append(href if href.startswith('http') else urljoin(url, href))
+            category_urls.append(
+                href if href.startswith("http") else urljoin(url, href)
+            )
     return category_urls
 
 
@@ -73,7 +76,7 @@ def parse_products_from_category(category_url):
     text = fetch(category_url)
     if not text:
         return []
-    category_soup = bs4.BeautifulSoup(text, 'html.parser')
+    category_soup = bs4.BeautifulSoup(text, "html.parser")
     container = category_soup.find("div", class_="css-j0t2x2")
     if not container:
         return []
@@ -158,14 +161,16 @@ class RealEstate:
         self.building_details = building_details
 
     def format(self):
-        lines = [f"🏠 {self.base['title']}",
-                 "",
-                 f"Область: {self.building_details.get('Область')}",
-                 f"Город: {self.building_details.get('Город')}",
-                 f"Район: {self.building_details.get('Район')}",
-                 "",
-                 f"ID: {self.building_details.get('ID')}",
-                 ""]
+        lines = [
+            f"🏠 {self.base['title']}",
+            "",
+            f"Область: {self.building_details.get('Область')}",
+            f"Город: {self.building_details.get('Город')}",
+            f"Район: {self.building_details.get('Район')}",
+            "",
+            f"ID: {self.building_details.get('ID')}",
+            "",
+        ]
 
         for k, v in self.building_details.items():
             if k in ("Область", "Город", "Район", "ID"):
@@ -177,6 +182,7 @@ class RealEstate:
 
         return "\n".join(lines)
 
+
 def parse_price_value(text: str):
     """Парсит строку цены и возвращает (value: float|None, currency: str).
     Поддерживает UZS, USD, EUR и пометки вроде 'договор'/'торг'.
@@ -184,31 +190,31 @@ def parse_price_value(text: str):
     if not text:
         return None, "UNKNOWN"
 
-    s = text.lower().replace('\u00A0', ' ').strip()
+    s = text.lower().replace("\u00a0", " ").strip()
 
     # если указано, что цена по договорённости
-    if 'договор' in s or 'торг' in s or 'по договорённости' in s:
-        return None, 'NEGOTIABLE'
+    if "договор" in s or "торг" in s or "по договорённости" in s:
+        return None, "NEGOTIABLE"
 
     # Ищем число (с возможными разделителями тысяч/десятичных)
     m = re.search(r"(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)", s)
     if not m:
-        return None, 'UNKNOWN'
+        return None, "UNKNOWN"
 
     num = m.group(1)
     # удаляем пробелы в тысячах
-    num = num.replace('\u00A0', '').replace(' ', '').replace(',', '.')
+    num = num.replace("\u00a0", "").replace(" ", "").replace(",", ".")
     try:
         value = float(num)
     except ValueError:
-        return None, 'UNKNOWN'
+        return None, "UNKNOWN"
 
     # Определяем валюту
-    if '$' in s or 'usd' in s or 'y.e' in s:
-        currency = 'USD'
+    if "$" in s or "usd" in s or "y.e" in s:
+        currency = "USD"
     else:
         # если явно не указано — считаем UZS
-        currency = 'UZS'
+        currency = "UZS"
 
     return value, currency
 
@@ -233,6 +239,7 @@ class Query:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self._results, f, ensure_ascii=False, indent=2)
 
+
 class Filters:
     def __init__(self):
         self.rules = []
@@ -244,7 +251,7 @@ class Filters:
                 return False
 
             if currency == "EUR":
-                value *= 14000   # примерный курс
+                value *= 14000  # примерный курс
             elif currency == "USD":
                 value *= 12500
 
@@ -272,11 +279,8 @@ class Filters:
     def match(self, item):
         return all(rule(item) for rule in self.rules)
 
-filters = (Filters()
-           .price_below(700_000)
-           .city("Ташкент")
-           .status("Новый")
-           .date("Сегодня"))
+
+filters = Filters().price_below(700_000).city("Ташкент").status("Новый").date("Сегодня")
 
 results = []
 
@@ -285,16 +289,23 @@ for category_url in parse_category_urls(main_url):
         products = parse_products_from_category(category_url)
 
         # специальная логика для недвижимости
-        if category_url == urljoin(main_url, "nedvizhimost/") or category_url.rstrip('/') == "https://www.olx.uz/nedvizhimost":
+        if (
+            category_url == urljoin(main_url, "nedvizhimost/")
+            or category_url.rstrip("/") == "https://www.olx.uz/nedvizhimost"
+        ):
             try:
-                products = parse_products_from_category(urljoin(category_url, "kvartiry/"))
+                products = parse_products_from_category(
+                    urljoin(category_url, "kvartiry/")
+                )
                 product_links = extract_products_links(products)
                 for link in product_links:
                     try:
                         building_details = parse_real_estate_details(link)
                         print(building_details)
                     except Exception as e:
-                        logger.exception("Ошибка парсинга детали недвижимости %s: %s", link, e)
+                        logger.exception(
+                            "Ошибка парсинга детали недвижимости %s: %s", link, e
+                        )
             except Exception as e:
                 logger.exception("Ошибка получения раздела недвижимости: %s", e)
 
@@ -304,11 +315,8 @@ for category_url in parse_category_urls(main_url):
 
                 if filters.match(details):
                     pass
-                    #print(details)
+                    # print(details)
             except Exception as e:
                 logger.exception("Ошибка парсинга объявления в %s: %s", category_url, e)
     except Exception as e:
         logger.exception("Ошибка обработки категории %s: %s", category_url, e)
-
-
-

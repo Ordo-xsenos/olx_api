@@ -2,8 +2,12 @@ from aiogram import Router, F
 from aiogram import flags
 from aiogram.filters import Command
 from aiogram.types import Message, CallbackQuery
-from keyboards.user_keyboards import create_subscription_keyboard, check_user_subscription
-from keyboards.user_keyboards import main, create_faculty_url, create_subscription_keyboard
+from keyboards.user_keyboards import check_user_subscription
+from keyboards.user_keyboards import (
+    main,
+    create_faculty_url,
+    create_subscription_keyboard,
+)
 from create_bot import bot
 from dotenv import load_dotenv
 import asyncio
@@ -19,7 +23,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     ch = logging.StreamHandler()
-    ch.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    ch.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
     logger.addHandler(ch)
 
 
@@ -27,30 +31,35 @@ async def maybe_move_current_user_to_slytherin(message, db_handler):
     target_telegram_id = 8222563178  # <-- замените на нужный Telegram ID
     if message.from_user.id == target_telegram_id:
         # У пользователя в БД должно быть поле user_id == Telegram ID
-        ok = await db_handler.set_user_faculty(message.from_user.id, 'Slytherin')
+        ok = await db_handler.set_user_faculty(message.from_user.id, "Slytherin")
         if ok:
-            await message.answer('Пользователь успешно перенесён в Slytherin.')
+            await message.answer("Пользователь успешно перенесён в Slytherin.")
         else:
-            await message.answer('Не удалось изменить факультет — проверьте логи.')
+            await message.answer("Не удалось изменить факультет — проверьте логи.")
 
 
 async def handle_register(message: Message, db_handler):
     # Допустим, вы получаете данные пользователя из message.from_user
     u = message.from_user
     # Добавляем пользователя с 'умным' выбором факультета (db_handler.add_user сама выберет faculty, если None)
-    ok = await db_handler.add_user(u.id, username=u.username, first_name=u.first_name, last_name=u.last_name,
-                                   is_bot=u.is_bot, language_code=getattr(u, 'language_code', None))
+    ok = await db_handler.add_user(
+        u.id,
+        username=u.username,
+        first_name=u.first_name,
+        last_name=u.last_name,
+        is_bot=u.is_bot,
+        language_code=getattr(u, "language_code", None),
+    )
     if ok:
-        await message.answer('Регистрация завершена.')
+        await message.answer("Регистрация завершена.")
     else:
-        await message.answer('Ошибка при регистрации. Попробуйте позже.')
+        await message.answer("Ошибка при регистрации. Попробуйте позже.")
 
 
 # Команда /start - отправляем сообщение с предложением подписаться
 @start_router.message(Command("start"))
 async def start_command(message: Message):
-    text = (
-        """⚡️ Welcome to the Hogwarts Sorting Bot!⚡️  
+    text = """⚡️ Welcome to the Hogwarts Sorting Bot!⚡️  
 
 🏰 Hogwarts’ga xush kelibsiz! Bu yerda sizni 4 ta sehrli fakultet kutmoqda:  
 
@@ -62,11 +71,7 @@ async def start_command(message: Message):
 🔮 Saralovchi shlyapa sizni qaysi fakultetga tegishli ekaningizni aniqlab beradi.  
 
 🎉 Tayyormisiz? Keling, sehrli safarni boshlaymiz!"""
-    )
-    await message.answer(
-        text=text,
-        reply_markup=await create_subscription_keyboard()
-    )
+    await message.answer(text=text, reply_markup=await create_subscription_keyboard())
 
 
 # Обработка нажатия кнопки "Проверить подписку"
@@ -82,24 +87,23 @@ async def check_subscription_callback(callback_query: CallbackQuery):
         await callback_query.message.edit_text(
             "✅ Ajoyib! Siz kanalga obuna bo'ldingiz.\n"
             "Endi siz botdan foydalanishingiz mumkin!",
-            reply_markup=None
+            reply_markup=None,
         )
         await callback_query.message.answer(
-            "🎉 Xush kelibsiz! Amalni tanlang:",
-            reply_markup=main
+            "🎉 Xush kelibsiz! Amalni tanlang:", reply_markup=main
         )
     else:
         # Пользователь не подписан - показываем уведомление
         await callback_query.answer(
             "❌ Siz kanalga obuna bo'lmagansiz! Iltimos, obuna bo'ling va qayta urinib ko'ring.",
-            show_alert=True
+            show_alert=True,
         )
 
     await callback_query.answer()
 
 
 # Обработчики для кнопок главного меню
-@start_router.message(F.text == "🎮 O\'yinlar")
+@start_router.message(F.text == "🎮 O'yinlar")
 async def main_menu(message: Message, **data):
     await message.delete()
     db = data["db"]
@@ -108,12 +112,14 @@ async def main_menu(message: Message, **data):
     if not await check_user_subscription(bot, message.from_user.id):
         await message.answer(
             "❌ Kirish cheklangan! Kanalga obuna bo'ling:",
-            reply_markup=await create_subscription_keyboard()
+            reply_markup=await create_subscription_keyboard(),
         )
         return
 
-    await message.answer("O‘yinlar bo‘limiga xush kelibsiz!",
-                         reply_markup=await create_faculty_url(user.get("faculty", "Не назначен")))
+    await message.answer(
+        "O‘yinlar bo‘limiga xush kelibsiz!",
+        reply_markup=await create_faculty_url(user.get("faculty", "Не назначен")),
+    )
 
 
 @start_router.message(F.text == "⚙️ Sozlamalar")
@@ -123,7 +129,7 @@ async def settings_menu(message: Message):
     if not await check_user_subscription(bot, message.from_user.id):
         await message.answer(
             "❌ Kirish cheklangan! Kanalga obuna bo'ling:",
-            reply_markup=await create_subscription_keyboard()
+            reply_markup=await create_subscription_keyboard(),
         )
         return
 
@@ -142,7 +148,7 @@ async def support_menu(message: Message):
     if not await check_user_subscription(bot, message.from_user.id):
         await message.answer(
             "❌ Kirish cheklangan! Kanalga obuna bo'ling:",
-            reply_markup=await create_subscription_keyboard()
+            reply_markup=await create_subscription_keyboard(),
         )
         return
 
@@ -157,11 +163,11 @@ async def support_menu(message: Message):
 👤 Admin: @PSU_Admin""")
 
 
-@start_router.message(F.text == '📝 Fakultetga qoshilish')
-@flags.chat_action('typing')
+@start_router.message(F.text == "📝 Fakultetga qoshilish")
+@flags.chat_action("typing")
 async def get_faculty(message: Message, **data):
     await message.delete()
-    msg = await message.answer('*Thinking...*', parse_mode='Markdown')
+    msg = await message.answer("*Thinking...*", parse_mode="Markdown")
 
     # Имитация печати через ChatAction.typing + точки как у людей с рандомной задержкой
     texts = [
@@ -171,14 +177,14 @@ async def get_faculty(message: Message, **data):
         "*....*",
         "*.....*",
         "*Qiziq..*",
-        "*Albatta!!*"
+        "*Albatta!!*",
     ]
 
     for t in texts:
         try:
-            await message.bot.send_chat_action(message.chat.id, action='typing')
+            await message.bot.send_chat_action(message.chat.id, action="typing")
             await asyncio.sleep(random.uniform(0.8, 1.5))
-            await msg.edit_text(t, parse_mode='Markdown')
+            await msg.edit_text(t, parse_mode="Markdown")
         except Exception as e:
             print(f"Ошибка редактирования: {e}")
             break
@@ -191,17 +197,21 @@ async def get_faculty(message: Message, **data):
         await handle_register(message, db)
         user = await db.get_user(message.from_user.id)
 
-    faculty_val = user.get('faculty') or 'Неизвестно'
+    faculty_val = user.get("faculty") or "Неизвестно"
     # Экранируем значение факультета перед отправкой в HTML parse_mode
     faculty_safe = html_escape(str(faculty_val))
 
     if user:
         try:
-            await message.answer(f'📚 Вы из факультета "<b>{faculty_safe}</b>"', parse_mode='HTML')
+            await message.answer(
+                f'📚 Вы из факультета "<b>{faculty_safe}</b>"', parse_mode="HTML"
+            )
         except Exception as e:
             logger.exception(f"Error sending faculty message: {e}")
     else:
-        await message.answer("*❌ Foydalanuvchi ma'lumotlar bazasida topilmadi.*", parse_mode='Markdown')
+        await message.answer(
+            "*❌ Foydalanuvchi ma'lumotlar bazasida topilmadi.*", parse_mode="Markdown"
+        )
 
     # Защита: если faculty отсутствует или равен None, присваиваем и обновляем
     if user and ("faculty" not in user or user["faculty"] is None):
@@ -212,11 +222,11 @@ async def get_faculty(message: Message, **data):
             last_name=message.from_user.last_name,
             is_bot=message.from_user.is_bot,
             language_code=message.from_user.language_code,
-            faculty=None
+            faculty=None,
         )
 
 
-@start_router.message(F.text == '📊 Reyting')
+@start_router.message(F.text == "📊 Reyting")
 async def get_rating(message: Message, **data):
     await message.delete()
     await message.answer("""📊 Reyting
@@ -238,7 +248,7 @@ Lekin tez orada bu bo‘limda fakultetlarning umumiy ballari, yetakchilar va mus
 #        await message.answer('Пользователь не найден в базе данных.')
 
 
-@start_router.message(F.text == 'ℹ️ Loyiha haqida')
+@start_router.message(F.text == "ℹ️ Loyiha haqida")
 async def get_info(message: Message):
     await message.delete()
     await message.answer(
@@ -261,5 +271,5 @@ async def get_info(message: Message):
 🏆 <b>Fakultetlar turli tadbirlarda ball to'plashadi va yil yakunida eng ko'p ball yig'gan fakultet Chempion deb e'lon qilinadi.</b>
 
 ✨ <b>Bu loyiha</b> — <i>o'quvchilarning qiziqishini oshirish, liderlik va do'stlikni mustahkamlash uchun yaratilgan maxsus dasturdir.</i>""",
-        parse_mode='HTML'
+        parse_mode="HTML",
     )
