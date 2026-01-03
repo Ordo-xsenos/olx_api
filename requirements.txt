@@ -5,3 +5,4 @@ aiogram~=3.24.0
 APScheduler~=3.11.2
 asyncpg~=0.31.0
 python-decouple~=3.8
+python-dotenv
