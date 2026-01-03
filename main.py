@@ -95,6 +95,7 @@ def parse_real_estate_details(ad_url):
 
     details["title"] = get_text_or_default(soup, "h4", "css-1au435n")
     details["date"] = get_text_or_default(soup, "span", "css-7b83xv")
+    details["price"] = get_text_or_default(soup, "h3", "css-yauxmy")
     location_div = soup.find("div", class_="css-1deibjd")
     details["precise_location"] = get_text_or_default(location_div, "p", "css-9pna1a")
     details["location"] = get_text_or_default(location_div, "p", "css-3cz5o2")
