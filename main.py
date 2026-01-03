@@ -99,6 +99,13 @@ def parse_real_estate_details(ad_url):
     location_div = soup.find("div", class_="css-1deibjd")
     details["precise_location"] = get_text_or_default(location_div, "p", "css-9pna1a")
     details["location"] = get_text_or_default(location_div, "p", "css-3cz5o2")
+    parameters_div = soup.find("div", class_="css-6zsv65")
+    parameters_containers = parameters_div.find_all("p", class_="css-13x8d99")
+    parameters_list = []
+    for parameter in parameters_containers:
+        parameter = parameter.get_text()
+        parameters_list.append(parameter)
+    details["parameters"] = parameters_list
     details["ID"] = get_text_or_default(soup, "span", "css-ooacec")
 
     for row in soup.select("div[data-testid='ad-parameters'] div"):
