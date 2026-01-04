@@ -14,7 +14,10 @@ main = ReplyKeyboardMarkup(
             KeyboardButton(text="📝 Fakultetga qoshilish"),
             KeyboardButton(text="📊 Reyting"),
         ],
-        [KeyboardButton(text="ℹ️ Loyiha haqida"), KeyboardButton(text="❓ Yordam")],
+        [
+            KeyboardButton(text="ℹ️ Loyiha haqida"),
+            KeyboardButton(text="❓ Yordam"),
+        ],
         [
             KeyboardButton(text="⚙️ Sozlamalar"),
             KeyboardButton(text="🎮 O'yinlar"),
@@ -31,12 +34,14 @@ async def create_subscription_keyboard():
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="📢 Kanalga obuna boling", url="https://t.me/Shayxontohur_TIM"
+                    text="📢 Kanalga obuna boling",
+                    url="https://t.me/Shayxontohur_TIM",
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="✅ Obunani tekshiring", callback_data="check_subscription"
+                    text="✅ Obunani tekshiring",
+                    callback_data="check_subscription",
                 )
             ],
             [
@@ -67,7 +72,9 @@ async def create_faculty_url(faculty: str) -> InlineKeyboardMarkup:
         "Ravenclaw": "https://t.me/+vKbkfxNmTTdkMzgy",
         "Slytherin": "https://t.me/+RT6x82IdsPFhMGYy",
     }
-    url = faculty_list[faculty]  # Замените на реальную ссылку для каждого факультета
+    url = faculty_list[
+        faculty
+    ]  # Замените на реальную ссылку для каждого факультета
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="Fakultetingiz", url=url)]]
     )

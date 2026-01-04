@@ -7,7 +7,9 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     ch = logging.StreamHandler()
-    ch.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+    ch.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
     logger.addHandler(ch)
 
 DEFAULT_FACULTIES = ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"]
@@ -94,8 +96,10 @@ class PostgresHandler:
                              ),
                                  faculty VARCHAR(255) NOT NULL,
                                  rating INTEGER DEFAULT 1 CHECK (rating > 0),
-                                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                 created_at TIMESTAMP DEFAULT 
+                                                    CURRENT_TIMESTAMP,
+                                 updated_at TIMESTAMP DEFAULT 
+                                                    CURRENT_TIMESTAMP
                                  ); \
                              """
         # language=postgresql
@@ -119,7 +123,8 @@ class PostgresHandler:
                                 ( \
                                     50 \
                                 ),
-                                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                    created_at TIMESTAMP DEFAULT 
+                                                             CURRENT_TIMESTAMP
                                     ); \
                                 """
 
@@ -140,26 +145,16 @@ class PostgresHandler:
                                        255 \
                                    ),
                                        data JSONB,
-                                       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                                       updated_at TIMESTAMP DEFAULT 
+                                                                CURRENT_TIMESTAMP
                                        ); \
                                    """
-
-        # Создание индексов для оптимизации
-        # language=sql
-        create_indexes = [
-            "CREATE INDEX IF NOT EXISTS idx_messages_user_id ON messages(user_id);",
-            "CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);",
-            "CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);",
-        ]
 
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(create_users_table)
                 await conn.execute(create_messages_table)
                 await conn.execute(create_user_states_table)
-
-                for index in create_indexes:
-                    await conn.execute(index)
 
                 logger.info("База данных инициализирована")
         except Exception as e:
@@ -177,10 +172,10 @@ class PostgresHandler:
         faculty: Optional[str] = None,
         rating: int = 1,
     ) -> bool:
-        """Добавляет пользователя или обновляет его. Если faculty не указан — выберет автоматически.
-
-        Защита от гонок реализована: мы начинаем транзакцию и внутри вызываем assign_faculty,
-
+        """Добавляет пользователя или обновляет его.
+        Если faculty не указан — выберет автоматически.
+        Защита от гонок реализована: мы начинаем транзакцию
+                                            и внутри вызываем assign_faculty,
         затем вставляем/обновляем запись.
         """
         if rating <= 0:
@@ -193,10 +188,13 @@ class PostgresHandler:
                         # выбрать факультет безопасно внутри транзакции
                         faculty = await self.assign_faculty(conn)
 
-                    # Используем UPSERT (ON CONFLICT) для атомарного вставки/обновления
+                    # Используем UPSERT (ON CONFLICT)
+                    #               для атомарного вставки/обновления
                     insert_q = """
-                               INSERT INTO users (user_id, username, first_name, last_name, is_bot, language_code, faculty, rating, created_at, updated_at)
-                               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                               INSERT INTO users (user_id, username, is_bot, 
+                                    language_code, created_at, updated_at)
+                               VALUES ($1, $2, $3, $4, 
+                                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                                ON CONFLICT (user_id) DO UPDATE SET
                                username = EXCLUDED.username,
                                first_name = EXCLUDED.first_name,
@@ -218,10 +216,14 @@ class PostgresHandler:
                         faculty,
                         rating,
                     )
-                    logger.info(f"User {user_id} added/updated with faculty={faculty}")
+                    logger.info(
+                        f"User {user_id} added/updated with faculty={faculty}"
+                    )
             return True
         except Exception as e:
-            logger.exception(f"Error while adding/updating user {user_id}: {e}")
+            logger.exception(
+                f"Error while adding/updating user {user_id}: {e}"
+            )
             return False
 
     async def get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
@@ -272,7 +274,9 @@ class PostgresHandler:
                 """
         try:
             async with self.pool.acquire() as conn:
-                await conn.execute(query, user_id, message_id, text, message_type)
+                await conn.execute(
+                    query, user_id, message_id, text, message_type
+                )
                 return True
         except Exception as e:
             logger.error(f"Ошибка добавления сообщения: {e}")
@@ -294,7 +298,9 @@ class PostgresHandler:
                 rows = await conn.fetch(query, user_id, limit)
                 return [dict(row) for row in rows]
         except Exception as e:
-            logger.error(f"Ошибка получения сообщений пользователя {user_id}: {e}")
+            logger.error(
+                f"Ошибка получения сообщений пользователя {user_id}: {e}"
+            )
             return []
 
     async def get_messages_count(self, user_id: int = None) -> int:
@@ -321,7 +327,8 @@ class PostgresHandler:
         """Установка состояния пользователя"""
         query = """
                 INSERT INTO user_states (user_id, state, data, updated_at)
-                VALUES ($1, $2, $3, CURRENT_TIMESTAMP) ON CONFLICT (user_id) DO \
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP) 
+                ON CONFLICT (user_id) DO \
                 UPDATE SET
                     state = EXCLUDED.state, \
                     data = EXCLUDED.data, \
@@ -332,7 +339,9 @@ class PostgresHandler:
                 await conn.execute(query, user_id, state, data)
                 return True
         except Exception as e:
-            logger.error(f"Ошибка установки состояния пользователя {user_id}: {e}")
+            logger.error(
+                f"Ошибка установки состояния пользователя {user_id}: {e}"
+            )
             return False
 
     async def get_user_state(self, user_id: int) -> Optional[Dict[str, Any]]:
@@ -343,7 +352,9 @@ class PostgresHandler:
                 row = await conn.fetchrow(query, user_id)
                 return dict(row) if row else None
         except Exception as e:
-            logger.error(f"Ошибка получения состояния пользователя {user_id}: {e}")
+            logger.error(
+                f"Ошибка получения состояния пользователя {user_id}: {e}"
+            )
             return None
 
     async def clear_user_state(self, user_id: int) -> bool:
@@ -354,7 +365,9 @@ class PostgresHandler:
                 result = await conn.execute(query, user_id)
                 return "DELETE" in result
         except Exception as e:
-            logger.error(f"Ошибка очистки состояния пользователя {user_id}: {e}")
+            logger.error(
+                f"Ошибка очистки состояния пользователя {user_id}: {e}"
+            )
             return False
 
     # Общие методы
@@ -377,7 +390,9 @@ class PostgresHandler:
             logger.error(f"Ошибка выполнения SELECT запроса: {e}")
             return []
 
-    async def fetchrow_query(self, query: str, *params) -> Optional[Dict[str, Any]]:
+    async def fetchrow_query(
+        self, query: str, *params
+    ) -> Optional[Dict[str, Any]]:
         """Выполнение SELECT запроса с получением одной строки"""
         try:
             async with self.pool.acquire() as conn:
@@ -402,12 +417,15 @@ class PostgresHandler:
         """Получение общей статистики"""
         try:
             async with self.pool.acquire() as conn:
-                users_count = await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+                users_count = (
+                    await conn.fetchval("SELECT COUNT(*) FROM users") or 0
+                )
                 messages_count = (
                     await conn.fetchval("SELECT COUNT(*) FROM messages") or 0
                 )
                 active_states = (
-                    await conn.fetchval("SELECT COUNT(*) FROM user_states") or 0
+                    await conn.fetchval("SELECT COUNT(*) FROM user_states")
+                    or 0
                 )
 
                 return {

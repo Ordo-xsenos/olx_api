@@ -7,7 +7,7 @@ from create_bot import pg_db
 async def main():
     await pg_db.create_pool()
     await pg_db.init_database()
-    # scheduler.add_job(broadcast_text, 'cron', day=1, hour=9, kwargs={'text': BROADCAST_TEXT})
+    # scheduler.add_job(broadcast_text, 'cron', day=1, hour=9)
     scheduler.start()
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)

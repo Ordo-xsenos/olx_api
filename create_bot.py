@@ -13,17 +13,21 @@ scheduler = AsyncIOScheduler(timezone="Asia/Tashkent")
 admins = [int(admin_id) for admin_id in config("ADMINS").split(",")]
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
 
 bot = Bot(
-    token=config("TOKEN"), default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    token=config("TOKEN"),
+    default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
 dp = Dispatcher(storage=MemoryStorage())
 dp.message.middleware(DbMiddleware(pg_db))
 dp.callback_query.middleware(DbMiddleware(pg_db))
 
-from handlers.start import start_router  # импортируем после создания bot и dp #noqa
+from handlers.start import (  # noqa
+    start_router,
+)  # импортируем после создания bot и dp #noqa
 
 dp.include_router(start_router)

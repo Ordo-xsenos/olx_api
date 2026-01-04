@@ -23,9 +23,11 @@ RETRY_STRATEGY = Retry(
 ADAPTER = HTTPAdapter(max_retries=RETRY_STRATEGY)
 SESSION.mount("https://", ADAPTER)
 SESSION.mount("http://", ADAPTER)
-SESSION.headers.update({"User-Agent": "Mozilla/5.0 (compatible; olx-scraper/1.0)"})
+SESSION.headers.update(
+    {"User-Agent": "Mozilla/5.0 (compatible; olx-scraper/1.0)"}
+)
 DEFAULT_TIMEOUT = 10  # seconds
-REQUEST_DELAY = 0.2  # seconds между запросами (rate limit)
+REQUEST_DELAY = 0.1  # seconds между запросами (rate limit)
 
 
 def fetch(url: str, timeout: int = DEFAULT_TIMEOUT) -> str | None:
@@ -71,6 +73,23 @@ def parse_category_urls(url):
             )
     return category_urls
 
+
+def get_total_pages(soup):
+    """
+    Ищет блок пагинации и возвращает номер последней страницы.
+    Если пагинации нет (всего 1 страница), возвращает 1.
+    """
+    try:
+        pagination_links = soup.find_all(
+            "a", class_="css-b6tdh7"
+        )
+
+        last_page = int(pagination_links[-1].get_text(strip=True))
+        return last_page
+
+    except Exception as e:
+        logger.warning(f"Не удалось определить количество страниц: {e}")
+        return 1
 
 def parse_products_from_category(category_url):
     text = fetch(category_url)
@@ -128,12 +147,16 @@ def parse_real_estate_details(ad_url):
     details["date"] = get_text_or_default(soup, "span", "css-7b83xv")
     details["price"] = get_text_or_default(soup, "h3", "css-yauxmy")
     location_div = soup.find("div", class_="css-1deibjd")
-    details["precise_location"] = get_text_or_default(location_div, "p", "css-9pna1a")
+    details["precise_location"] = get_text_or_default(
+        location_div, "p", "css-9pna1a"
+    )
     details["location"] = get_text_or_default(location_div, "p", "css-3cz5o2")
     parameters_div = soup.find("div", class_="css-6zsv65")
     parameters_list = []
     if parameters_div:
-        parameters_containers = parameters_div.find_all("p", class_="css-13x8d99")
+        parameters_containers = parameters_div.find_all(
+            "p", class_="css-13x8d99"
+        )
         for parameter in parameters_containers:
             parameter = parameter.get_text()
             parameters_list.append(parameter)
@@ -197,7 +220,9 @@ def parse_price_value(text: str):
         return None, "NEGOTIABLE"
 
     # Ищем число (с возможными разделителями тысяч/десятичных)
-    m = re.search(r"(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)", s)
+    m = re.search(
+        r"(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)", s
+    )
     if not m:
         return None, "UNKNOWN"
 
@@ -280,7 +305,13 @@ class Filters:
         return all(rule(item) for rule in self.rules)
 
 
-filters = Filters().price_below(700_000).city("Ташкент").status("Новый").date("Сегодня")
+filters = (
+    Filters()
+    .price_below(700_000)
+    .city("Ташкент")
+    .status("Новый")
+    .date("Сегодня")
+)
 
 results = []
 
@@ -304,10 +335,14 @@ for category_url in parse_category_urls(main_url):
                         print(building_details)
                     except Exception as e:
                         logger.exception(
-                            "Ошибка парсинга детали недвижимости %s: %s", link, e
+                            "Ошибка парсинга детали недвижимости %s: %s",
+                            link,
+                            e,
                         )
             except Exception as e:
-                logger.exception("Ошибка получения раздела недвижимости: %s", e)
+                logger.exception(
+                    "Ошибка получения раздела недвижимости: %s", e
+                )
 
         for product in products:
             try:
@@ -317,6 +352,8 @@ for category_url in parse_category_urls(main_url):
                     pass
                     # print(details)
             except Exception as e:
-                logger.exception("Ошибка парсинга объявления в %s: %s", category_url, e)
+                logger.exception(
+                    "Ошибка парсинга объявления в %s: %s", category_url, e
+                )
     except Exception as e:
         logger.exception("Ошибка обработки категории %s: %s", category_url, e)
