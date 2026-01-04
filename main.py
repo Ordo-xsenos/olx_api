@@ -91,16 +91,50 @@ def get_total_pages(soup):
         logger.warning(f"Не удалось определить количество страниц: {e}")
         return 1
 
+
 def parse_products_from_category(category_url):
+    all_products = []
+
+    #Загружаем первую страницу
     text = fetch(category_url)
     if not text:
+        logger.warning(
+            "Не удалось загрузить начальную страницу категории: %s",
+            category_url,
+        )
         return []
-    category_soup = bs4.BeautifulSoup(text, "html.parser")
-    container = category_soup.find("div", class_="css-j0t2x2")
-    if not container:
-        return []
-    items = container.find_all("div", class_="css-1sw7q4x")
-    return items or []
+
+    soup = bs4.BeautifulSoup(text, "html.parser")
+    total_pages = get_total_pages(soup)
+
+    #Цикл по всем страницам
+    for page_num in range(1, total_pages + 1):
+        logger.info("Обработка страницы %s из %s", page_num, total_pages)
+
+        if page_num > 1:
+            # Формируем URL для страниц 2, 3...
+            # На OLX обычно формат ?page=2
+            current_url = f"{category_url.rstrip('/')}/?page={page_num}"
+            text = fetch(current_url)
+            if not text:
+                logger.error("Пропуск страницы %s: ошибка загрузки", page_num)
+                continue
+            soup = bs4.BeautifulSoup(text, "html.parser")
+
+        # Находим товары на текущей странице
+        container = soup.find("div", class_="css-j0t2x2")
+        if container:
+            items = container.find_all("div", class_="css-1sw7q4x")
+            all_products.extend(items)
+            logger.debug(
+                "Добавлено %s товаров со страницы %s", len(items), page_num
+            )
+
+        # Задержка между запросами (из твоих констант)
+        time.sleep(REQUEST_DELAY)
+
+    logger.info("Всего собрано товаров в категории: %s", len(all_products))
+    return all_products
 
 
 def parse_product_details(product):
@@ -162,18 +196,7 @@ def parse_real_estate_details(ad_url):
             parameters_list.append(parameter)
     details["parameters"] = parameters_list
     details["ID"] = get_text_or_default(soup, "span", "css-ooacec")
-
-    for row in soup.select("div[data-testid='ad-parameters'] div"):
-        spans = row.select("span")
-        if len(spans) < 2:
-            continue
-        key = spans[0].get_text(strip=True)
-        value = spans[1].get_text(strip=True)
-        details[key] = value
-
-    description = soup.select_one("div[data-testid='ad-description']")
-    if description:
-        details["Описание"] = description.get_text(strip=True)
+    details["Ссылка"] = ad_url
 
     return details
 
@@ -318,7 +341,6 @@ results = []
 for category_url in parse_category_urls(main_url):
     try:
         products = parse_products_from_category(category_url)
-
         # специальная логика для недвижимости
         if (
             category_url == urljoin(main_url, "nedvizhimost/")
@@ -329,6 +351,7 @@ for category_url in parse_category_urls(main_url):
                     urljoin(category_url, "kvartiry/")
                 )
                 product_links = extract_products_links(products)
+                print(len(product_links))
                 for link in product_links:
                     try:
                         building_details = parse_real_estate_details(link)
