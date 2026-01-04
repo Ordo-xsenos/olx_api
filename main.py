@@ -75,66 +75,71 @@ def parse_category_urls(url):
 
 
 def get_total_pages(soup):
-    """
-    Ищет блок пагинации и возвращает номер последней страницы.
-    Если пагинации нет (всего 1 страница), возвращает 1.
-    """
     try:
-        pagination_links = soup.find_all(
-            "a", class_="css-b6tdh7"
+        # Ищем контейнер с пагинацией
+        pagination_container = soup.find(
+            "ul", {"data-testid": "pagination-list"}
         )
+        if not pagination_container:
+            logger.info("Пагинация не найдена, считаем, что страница одна.")
+            return 1
 
-        last_page = int(pagination_links[-1].get_text(strip=True))
-        return last_page
+        #Находим все ссылки на страницы
+        links = pagination_container.find_all("a")
+        if not links:
+            return 1
+
+        #берем последний элемент
+        last_page_text = links[-1].get_text(strip=True)
+
+        # Если в конце стоит стрелочка ">", берем предпоследний элемент
+        if not last_page_text.isdigit():
+            last_page_text = links[-2].get_text(strip=True)
+
+        total_pages = int(last_page_text)
+        logger.info("Найдено страниц для парсинга: %s", total_pages)
+        return total_pages
 
     except Exception as e:
-        logger.warning(f"Не удалось определить количество страниц: {e}")
+        logger.error("Ошибка при определении количества страниц: %s", e)
         return 1
 
 
 def parse_products_from_category(category_url):
-    all_products = []
+    all_items = []  # Список для хранения HTML-блоков
 
-    #Загружаем первую страницу
+    # Загружаем первую страницу для анализа
     text = fetch(category_url)
     if not text:
         logger.warning(
-            "Не удалось загрузить начальную страницу категории: %s",
-            category_url,
+            "Не удалось загрузить начальную страницу: %s", category_url
         )
         return []
 
     soup = bs4.BeautifulSoup(text, "html.parser")
     total_pages = get_total_pages(soup)
 
-    #Цикл по всем страницам
+    # Проходим по всем страницам
     for page_num in range(1, total_pages + 1):
-        logger.info("Обработка страницы %s из %s", page_num, total_pages)
+        logger.info("Сбор товаров: страница %s из %s", page_num, total_pages)
 
         if page_num > 1:
-            # Формируем URL для страниц 2, 3...
-            # На OLX обычно формат ?page=2
             current_url = f"{category_url.rstrip('/')}/?page={page_num}"
-            text = fetch(current_url)
-            if not text:
-                logger.error("Пропуск страницы %s: ошибка загрузки", page_num)
+            page_text = fetch(current_url)
+            if not page_text:
                 continue
-            soup = bs4.BeautifulSoup(text, "html.parser")
+            soup = bs4.BeautifulSoup(page_text, "html.parser")
 
-        # Находим товары на текущей странице
+        # Находим контейнер и товары
         container = soup.find("div", class_="css-j0t2x2")
         if container:
             items = container.find_all("div", class_="css-1sw7q4x")
-            all_products.extend(items)
-            logger.debug(
-                "Добавлено %s товаров со страницы %s", len(items), page_num
-            )
+            all_items.extend(items)
 
-        # Задержка между запросами (из твоих констант)
+        # Небольшая пауза чтобы нас не приняли за ddos
         time.sleep(REQUEST_DELAY)
 
-    logger.info("Всего собрано товаров в категории: %s", len(all_products))
-    return all_products
+    return all_items
 
 
 def parse_product_details(product):
@@ -340,43 +345,40 @@ results = []
 
 for category_url in parse_category_urls(main_url):
     try:
+        # Теперь эта функция возвращает все объявления со всех страниц категории
         products = parse_products_from_category(category_url)
-        # специальная логика для недвижимости
-        if (
-            category_url == urljoin(main_url, "nedvizhimost/")
-            or category_url.rstrip("/") == "https://www.olx.uz/nedvizhimost"
-        ):
-            try:
-                products = parse_products_from_category(
-                    urljoin(category_url, "kvartiry/")
-                )
-                product_links = extract_products_links(products)
-                print(len(product_links))
-                for link in product_links:
-                    try:
-                        building_details = parse_real_estate_details(link)
-                        print(building_details)
-                    except Exception as e:
-                        logger.exception(
-                            "Ошибка парсинга детали недвижимости %s: %s",
-                            link,
-                            e,
-                        )
-            except Exception as e:
-                logger.exception(
-                    "Ошибка получения раздела недвижимости: %s", e
-                )
 
-        for product in products:
-            try:
-                details = parse_product_details(product)
+        # проверка на недвижимость
+        is_real_estate = "nedvizhimost" in category_url
 
-                if filters.match(details):
-                    pass
-                    # print(details)
-            except Exception as e:
-                logger.exception(
-                    "Ошибка парсинга объявления в %s: %s", category_url, e
-                )
+        if is_real_estate:
+            # Для недвижимости нам нужны ссылки на каждое объявление
+            product_links = extract_products_links(products)
+            logger.info(
+                "Найдено %s ссылок на объекты недвижимости", len(product_links)
+            )
+            print(len(product_links))
+            for link in product_links:
+                try:
+                    # специальная функция для глубокого парсинга объявления
+                    building_details = parse_real_estate_details(link)
+                    print(building_details)  # Или сохранение в БД
+                except Exception as e:
+                    logger.exception(
+                        "Ошибка парсинга объекта недвижимости %s: %s", link, e
+                    )
+
+        else:
+            # ДЛЯ ОБЫЧНЫХ КАТЕГОРИЙ
+            for product in products:
+                try:
+                    details = parse_product_details(product)
+                    if filters.match(details):
+                        # Здесь логика для подходящих под фильтр товаров
+                        # print(f"Подходящий товар: {details['title']}")
+                        pass
+                except Exception as e:
+                    logger.exception("Ошибка парсинга кратких деталей в %s", category_url)
+
     except Exception as e:
         logger.exception("Ошибка обработки категории %s: %s", category_url, e)

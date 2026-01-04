@@ -1,8 +1,6 @@
 from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
 )
 
 # Замени на ID твоего канала (должен начинаться с -100 для супергрупп/каналов)
@@ -28,32 +26,6 @@ main = ReplyKeyboardMarkup(
 )
 
 
-# Создаем inline клавиатуру с кнопкой подписки
-async def create_subscription_keyboard():
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📢 Kanalga obuna boling",
-                    url="https://t.me/Shayxontohur_TIM",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="✅ Obunani tekshiring",
-                    callback_data="check_subscription",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🎮 Asosiy guruh", url="https://t.me/PSU_Mafia"
-                )
-            ],
-        ]
-    )
-    return keyboard
-
-
 # Функция проверки подписки пользователя
 async def check_user_subscription(bot, user_id: int) -> bool:
     try:
@@ -63,19 +35,3 @@ async def check_user_subscription(bot, user_id: int) -> bool:
     except Exception as e:
         print(f"Obunani tekshirishda xatolik yuz berdi: {e}")
         return False
-
-
-async def create_faculty_url(faculty: str) -> InlineKeyboardMarkup:
-    faculty_list = {
-        "Gryffindor": "https://t.me/+YbYXza1MRCViNmVi",
-        "Hufflepuff": "https://t.me/+RX3X_EnrGdY5ZWVi",
-        "Ravenclaw": "https://t.me/+vKbkfxNmTTdkMzgy",
-        "Slytherin": "https://t.me/+RT6x82IdsPFhMGYy",
-    }
-    url = faculty_list[
-        faculty
-    ]  # Замените на реальную ссылку для каждого факультета
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="Fakultetingiz", url=url)]]
-    )
-    return keyboard
