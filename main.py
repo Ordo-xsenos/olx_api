@@ -1,44 +1,40 @@
-import requests
 import bs4
 import json
 import re
 from urllib.parse import urljoin
-import time
 import logging
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+import httpx
+import asyncio
 
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 main_url = "https://www.olx.uz"
+# Ограничиваем количество одновременных запросов (чтобы не забанили)
+MAX_CONCURRENT_REQUESTS = 5
+semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
-# Настройка сессии с retry и тайм-аутом
-SESSION = requests.Session()
-RETRY_STRATEGY = Retry(
-    total=3,
-    backoff_factor=0.5,
-    status_forcelist=[429, 500, 502, 503, 504],
-    allowed_methods=["GET", "POST"],
+# Асинхронный клиент с настройками тайм-аута и заголовков
+ASYNC_CLIENT = httpx.AsyncClient(
+    timeout=10.0,
+    headers={"User-Agent": "Mozilla/5.0 (compatible; olx-scraper/2.0)"},
+    follow_redirects=True
 )
-ADAPTER = HTTPAdapter(max_retries=RETRY_STRATEGY)
-SESSION.mount("https://", ADAPTER)
-SESSION.mount("http://", ADAPTER)
-SESSION.headers.update(
-    {"User-Agent": "Mozilla/5.0 (compatible; olx-scraper/1.0)"}
-)
-DEFAULT_TIMEOUT = 10  # seconds
-REQUEST_DELAY = 0.1  # seconds между запросами (rate limit)
 
 
-def fetch(url: str, timeout: int = DEFAULT_TIMEOUT) -> str | None:
-    try:
-        resp = SESSION.get(url, timeout=timeout)
-        resp.raise_for_status()
-        time.sleep(REQUEST_DELAY)
-        return resp.text
-    except Exception as e:
-        logger.error("Ошибка запроса %s: %s", url, e)
-        return None
+async def fetch(url: str) -> str | None:
+    """Асинхронное скачивание страницы с ограничением через семафор."""
+    async with semaphore:
+        try:
+            resp = await ASYNC_CLIENT.get(url)
+            resp.raise_for_status()
+            # Короткая пауза между запросами внутри семафора
+            await asyncio.sleep(0.1)
+            return resp.text
+        except Exception as e:
+            logger.error("Ошибка асинхронного запроса %s: %s", url, e)
+            return None
 
 
 def get_text_or_default(parent, tag, cls, default="None"):
@@ -48,10 +44,10 @@ def get_text_or_default(parent, tag, cls, default="None"):
     return el.get_text(strip=True) if el else default
 
 
-def parse_category_urls(url):
+async def parse_category_urls(url):
     category_urls = []
 
-    text = fetch(url)
+    text = await fetch(url)
     if not text:
         return category_urls
 
@@ -105,11 +101,11 @@ def get_total_pages(soup):
         return 1
 
 
-def parse_products_from_category(category_url):
+async def parse_products_from_category(category_url):
     all_items = []  # Список для хранения HTML-блоков
 
     # Загружаем первую страницу для анализа
-    text = fetch(category_url)
+    text = await fetch(category_url)
     if not text:
         logger.warning(
             "Не удалось загрузить начальную страницу: %s", category_url
@@ -125,7 +121,7 @@ def parse_products_from_category(category_url):
 
         if page_num > 1:
             current_url = f"{category_url.rstrip('/')}/?page={page_num}"
-            page_text = fetch(current_url)
+            page_text = await fetch(current_url)
             if not page_text:
                 continue
             soup = bs4.BeautifulSoup(page_text, "html.parser")
@@ -136,8 +132,6 @@ def parse_products_from_category(category_url):
             items = container.find_all("div", class_="css-1sw7q4x")
             all_items.extend(items)
 
-        # Небольшая пауза чтобы нас не приняли за ddos
-        time.sleep(REQUEST_DELAY)
 
     return all_items
 
@@ -174,8 +168,9 @@ def extract_products_links(products):
     return links
 
 
-def parse_real_estate_details(ad_url):
-    text = fetch(ad_url)
+async def parse_real_estate_details(ad_url):
+    """Асинхронная версия парсинга деталей объявления."""
+    text = await fetch(ad_url)
     if not text:
         return {}
     soup = bs4.BeautifulSoup(text, "html.parser")
@@ -343,42 +338,36 @@ filters = (
 
 results = []
 
-for category_url in parse_category_urls(main_url):
+
+async def run_parsing():
+    """Главная асинхронная функция."""
+    # Получаем категории (можно оставить синхронно, так как запрос один)
+    # Для примера возьмем одну категорию
+    target_category = "https://www.olx.uz/nedvizhimost/kvartiry/"
+    logger.info("Начинаем сбор товаров...")
+    products = await parse_products_from_category(target_category)
+
+    if "nedvizhimost" in target_category:
+        product_links = extract_products_links(products)
+        logger.info(
+            f"Найдено ссылок: {len(product_links)}. Начинаем глубокий парсинг..."
+        )
+
+        # Запускаем парсинг всех деталей объявлений параллельно (с учетом семафора)
+        detail_tasks = [parse_real_estate_details(link) for link in product_links]
+        all_details = await asyncio.gather(*detail_tasks)
+
+        for data in all_details:
+            if data:
+                print(f"Обработано: {data.get('title')} - {data.get('Ссылка')}")
+
+# Запуск программы
+if __name__ == "__main__":
     try:
-        # Теперь эта функция возвращает все объявления со всех страниц категории
-        products = parse_products_from_category(category_url)
-
-        # проверка на недвижимость
-        is_real_estate = "nedvizhimost" in category_url
-
-        if is_real_estate:
-            # Для недвижимости нам нужны ссылки на каждое объявление
-            product_links = extract_products_links(products)
-            logger.info(
-                "Найдено %s ссылок на объекты недвижимости", len(product_links)
-            )
-            print(len(product_links))
-            for link in product_links:
-                try:
-                    # специальная функция для глубокого парсинга объявления
-                    building_details = parse_real_estate_details(link)
-                    print(building_details)  # Или сохранение в БД
-                except Exception as e:
-                    logger.exception(
-                        "Ошибка парсинга объекта недвижимости %s: %s", link, e
-                    )
-
-        else:
-            # ДЛЯ ОБЫЧНЫХ КАТЕГОРИЙ
-            for product in products:
-                try:
-                    details = parse_product_details(product)
-                    if filters.match(details):
-                        # Здесь логика для подходящих под фильтр товаров
-                        # print(f"Подходящий товар: {details['title']}")
-                        pass
-                except Exception as e:
-                    logger.exception("Ошибка парсинга кратких деталей в %s", category_url)
-
-    except Exception as e:
-        logger.exception("Ошибка обработки категории %s: %s", category_url, e)
+        asyncio.run(run_parsing())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Закрываем клиент в конце
+        #asyncio.run(ASYNC_CLIENT.aclose())
+        print(f"Парсинг завершен")

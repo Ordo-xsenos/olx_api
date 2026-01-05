@@ -7,3 +7,4 @@ asyncpg~=0.31.0
 python-decouple~=3.8
 python-dotenv
 ruff~=0.14.10
+httpx~=0.28.1
