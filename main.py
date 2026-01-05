@@ -5,6 +5,8 @@ from urllib.parse import urljoin
 import logging
 import httpx
 import asyncio
+import requests
+from sqlalchemy.util import await_fallback
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -179,7 +181,15 @@ async def parse_real_estate_details(ad_url):
 
     details["title"] = get_text_or_default(soup, "h4", "css-1au435n")
     details["date"] = get_text_or_default(soup, "span", "css-7b83xv")
-    details["price"] = get_text_or_default(soup, "h3", "css-yauxmy")
+    source_value = parse_price_value(get_text_or_default(soup, "h3", "css-yauxmy"))[0]
+    currency = parse_price_value(get_text_or_default(soup, "h3", "css-yauxmy"))[1]
+    if currency == "UZS":
+        details["price"] = source_value
+    elif currency == "USD":
+        details["price"] = get_usd_exchange_rate("UZS", int(source_value))
+    else:
+        details["price"] = "Negotiable or Unknown"
+    details["currency"] = currency
     location_div = soup.find("div", class_="css-1deibjd")
     details["precise_location"] = get_text_or_default(
         location_div, "p", "css-9pna1a"
@@ -195,7 +205,7 @@ async def parse_real_estate_details(ad_url):
             parameter = parameter.get_text()
             parameters_list.append(parameter)
     details["parameters"] = parameters_list
-    details["ID"] = get_text_or_default(soup, "span", "css-ooacec")
+    details["olx_id"] = get_text_or_default(soup, "span", "css-ooacec")
     details["Ссылка"] = ad_url
 
     return details
@@ -229,9 +239,9 @@ class RealEstate:
         return "\n".join(lines)
 
 
-def parse_price_value(text: str):
+def parse_price_value(text: str) -> tuple[None, str] | tuple[float, str]:
     """Парсит строку цены и возвращает (value: float|None, currency: str).
-    Поддерживает UZS, USD, EUR и пометки вроде 'договор'/'торг'.
+    Поддерживает UZS, USD и пометки вроде 'договор'/'торг'.
     """
     if not text:
         return None, "UNKNOWN"
@@ -265,6 +275,26 @@ def parse_price_value(text: str):
         currency = "UZS"
 
     return value, currency
+
+async def get_usd_exchange_rate(target_currency : str, value : int) -> int | str:
+    """Получает курс обмена USD на целевую валюту и возвращает значение в целевой валюте."""
+    url = f"https://v6.exchangerate-api.com/v6/d8aad1c4d700d6cd1dc68e14/latest/USD"
+
+    try:
+        response = await fetch(url)
+        data = response.json()
+
+        if data["result"] == "success":
+            conversion_rate = data["conversion_rates"]
+            if conversion_rate:
+                return int(conversion_rate[target_currency]) * value
+            else:
+                return "Валюта не найдена."
+        else:
+            return "Ошибка при запросе к API."
+
+    except Exception as e:
+        return f"Произошла ошибка: {e}"
 
 
 class Query:
@@ -342,7 +372,6 @@ results = []
 async def run_parsing():
     """Главная асинхронная функция."""
     # Получаем категории (можно оставить синхронно, так как запрос один)
-    # Для примера возьмем одну категорию
     target_category = "https://www.olx.uz/nedvizhimost/kvartiry/"
     logger.info("Начинаем сбор товаров...")
     products = await parse_products_from_category(target_category)
@@ -368,6 +397,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        # Закрываем клиент в конце
+        # Закрываем клиент в конце, выходит странная ошибка RuntimeError: Event loop is closed поэтому закомментировал
         #asyncio.run(ASYNC_CLIENT.aclose())
         print(f"Парсинг завершен")
