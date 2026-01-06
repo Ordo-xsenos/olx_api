@@ -5,8 +5,6 @@ from urllib.parse import urljoin
 import logging
 import httpx
 import asyncio
-import requests
-from sqlalchemy.util import await_fallback
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
