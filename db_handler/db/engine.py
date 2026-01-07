@@ -22,17 +22,17 @@ async def db_test_connection() -> str:
         # res.scalar() даст строку версии
         return res.scalar()
 
-def get_sessionmaker() -> async_sessionmaker:
-    """Ленивая инициализация async_sessionmaker.
-    При первом вызове создаёт engine и sessionmaker, используя настройки из config.
+def get_session_maker() -> async_sessionmaker:
+    """Ленивая инициализация async_session_maker.
+    При первом вызове создаёт engine и session_maker, используя настройки из config.
     """
     global _engine, _SessionLocal
     if _SessionLocal is None:
         # импортируем конфиг локально, чтобы не создавать DatabaseSettings при импорте модуля
-        from .config import get_database_settings
+        from config import get_database_settings
         settings = get_database_settings()
-        DATABASE_URL = settings.database_url
-        _engine = create_async_engine(DATABASE_URL, echo=True)
+        database_url = settings.database_url
+        _engine = create_async_engine(database_url, echo=True)
         _SessionLocal = async_sessionmaker(_engine, expire_on_commit=False)
     return _SessionLocal
 

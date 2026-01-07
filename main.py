@@ -5,6 +5,7 @@ from urllib.parse import urljoin
 import logging
 import httpx
 import asyncio
+from decimal import Decimal, InvalidOperation
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -168,7 +169,7 @@ def extract_products_links(products):
     return links
 
 
-async def parse_real_estate_details(ad_url):
+async def parse_real_estate_details(ad_url, usd_rate: Decimal) -> dict:
     """Асинхронная версия парсинга деталей объявления."""
     text = await fetch(ad_url)
     if not text:
@@ -179,15 +180,28 @@ async def parse_real_estate_details(ad_url):
 
     details["title"] = get_text_or_default(soup, "h4", "css-1au435n")
     details["date"] = get_text_or_default(soup, "span", "css-7b83xv")
-    source_value = parse_price_value(get_text_or_default(soup, "h3", "css-yauxmy"))[0]
-    currency = parse_price_value(get_text_or_default(soup, "h3", "css-yauxmy"))[1]
-    if currency == "UZS":
-        details["price"] = source_value
-    elif currency == "USD":
-        details["price"] = get_usd_exchange_rate("UZS", int(source_value))
-    else:
-        details["price"] = "Negotiable or Unknown"
+    #--- Логика ЦЕН ---
+    raw_price_value = get_text_or_default(soup, "h3", "css-yauxmy")
+    source_value, currency = parse_price_value(raw_price_value)
+
+    details["original_price"] = source_value  # Сохраняем то, что было
     details["currency"] = currency
+    # Конвертация в сумы для сортировки в БД
+    if source_value is None:
+        details["price_uzs"] = None  # Цена не указана
+    elif currency == "UZS":
+        details["price_uzs"] = source_value
+    elif currency == "USD":
+        # Умножаем Decimal на Decimal
+        details["price_uzs"] = source_value * usd_rate
+    else:
+        details["price_uzs"] = 0
+
+    # Превращаем в float или int только в самом конце для JSON и БД
+    if isinstance(details["price_uzs"], Decimal):
+        details["price_uzs"] = int(details["price_uzs"])
+
+    #--- Логика ЛОКАЦИИ ---
     location_div = soup.find("div", class_="css-1deibjd")
     details["precise_location"] = get_text_or_default(
         location_div, "p", "css-9pna1a"
@@ -204,7 +218,7 @@ async def parse_real_estate_details(ad_url):
             parameters_list.append(parameter)
     details["parameters"] = parameters_list
     details["olx_id"] = get_text_or_default(soup, "span", "css-ooacec")
-    details["Ссылка"] = ad_url
+    details["url"] = ad_url
 
     return details
 
@@ -237,62 +251,57 @@ class RealEstate:
         return "\n".join(lines)
 
 
-def parse_price_value(text: str) -> tuple[None, str] | tuple[float, str]:
-    """Парсит строку цены и возвращает (value: float|None, currency: str).
-    Поддерживает UZS, USD и пометки вроде 'договор'/'торг'.
-    """
+def parse_price_value(text: str) -> tuple[Decimal | None, str]:
+    """Возвращает Decimal для точности."""
     if not text:
         return None, "UNKNOWN"
 
     s = text.lower().replace("\u00a0", " ").strip()
 
-    # если указано, что цена по договорённости
     if "договор" in s or "торг" in s or "по договорённости" in s:
         return None, "NEGOTIABLE"
 
-    # Ищем число (с возможными разделителями тысяч/десятичных)
-    m = re.search(
-        r"(\d{1,3}(?:[\s\u00A0]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)", s
-    )
+    m = re.search(r"(\d{1,3}(?:[\s]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)", s)
     if not m:
         return None, "UNKNOWN"
 
-    num = m.group(1)
-    # удаляем пробелы в тысячах
-    num = num.replace("\u00a0", "").replace(" ", "").replace(",", ".")
+    num_str = m.group(1).replace(" ", "").replace(",", ".")
     try:
-        value = float(num)
-    except ValueError:
+        value = Decimal(num_str) # Используем Decimal!
+    except InvalidOperation:
         return None, "UNKNOWN"
 
-    # Определяем валюту
     if "$" in s or "usd" in s or "y.e" in s:
         currency = "USD"
     else:
-        # если явно не указано — считаем UZS
         currency = "UZS"
 
     return value, currency
 
-async def get_usd_exchange_rate(target_currency : str, value : int) -> int | str:
-    """Получает курс обмена USD на целевую валюту и возвращает значение в целевой валюте."""
-    url = f"https://v6.exchangerate-api.com/v6/d8aad1c4d700d6cd1dc68e14/latest/USD"
 
+async def get_current_usd_rate() -> Decimal:
+    """Получает курс USD/UZS один раз."""
+    url = "https://v6.exchangerate-api.com/v6/d8aad1c4d700d6cd1dc68e14/latest/USD"
     try:
-        response = await fetch(url)
-        data = response.json()
+        # Используем твой fetch, который возвращает строку
+        text_response = await fetch(url)
+        if not text_response:
+            logger.error("Пустой ответ от API курсов")
+            return Decimal("12800")  # Fallback курс, если API упал
 
-        if data["result"] == "success":
-            conversion_rate = data["conversion_rates"]
-            if conversion_rate:
-                return int(conversion_rate[target_currency]) * value
-            else:
-                return "Валюта не найдена."
+        data = json.loads(text_response)  # Парсим строку в JSON
+
+        if data.get("result") == "success":
+            rate = data["conversion_rates"].get("UZS")
+            logger.info(f"Актуальный курс доллара: {rate}")
+            return Decimal(str(rate))
         else:
-            return "Ошибка при запросе к API."
+            logger.error("API вернул ошибку")
+            return Decimal("12800")
 
     except Exception as e:
-        return f"Произошла ошибка: {e}"
+        logger.error(f"Ошибка получения курса: {e}")
+        return Decimal("12800") # Возвращаем примерный курс при ошибке
 
 
 class Query:
@@ -368,25 +377,26 @@ results = []
 
 
 async def run_parsing():
-    """Главная асинхронная функция."""
-    # Получаем категории (можно оставить синхронно, так как запрос один)
     target_category = "https://www.olx.uz/nedvizhimost/kvartiry/"
     logger.info("Начинаем сбор товаров...")
+
+    # 1. Сначала получаем курс (1 запрос)
+    usd_rate = await get_current_usd_rate()
+
     products = await parse_products_from_category(target_category)
 
     if "nedvizhimost" in target_category:
         product_links = extract_products_links(products)
-        logger.info(
-            f"Найдено ссылок: {len(product_links)}. Начинаем глубокий парсинг..."
-        )
+        logger.info(f"Найдено {len(product_links)} объявлений.")
 
-        # Запускаем парсинг всех деталей объявлений параллельно (с учетом семафора)
-        detail_tasks = [parse_real_estate_details(link) for link in product_links]
+        # 2. Передаем usd_rate внутрь каждой задачи
+        detail_tasks = [parse_real_estate_details(link, usd_rate) for link in product_links]
+
         all_details = await asyncio.gather(*detail_tasks)
 
         for data in all_details:
-            if data:
-                print(f"Обработано: {data.get('title')} - {data.get('Ссылка')}")
+            if data and data.get("price_uzs"):
+                print(f"[{data['currency']}] {data['original_price']} -> {data['price_uzs']} UZS | {data['title']}")
 
 # Запуск программы
 if __name__ == "__main__":

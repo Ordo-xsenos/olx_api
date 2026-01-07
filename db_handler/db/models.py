@@ -16,7 +16,9 @@ class RealEstate(Base):
     currency: Mapped[str] = mapped_column(String(10), nullable=True)
     # Локация — хранится как строка
     location: Mapped[str] = mapped_column(String(200), nullable=True)
-    # "raw" — оригинальные данные от парсера, храним в JSONB
-    raw: Mapped[dict] = mapped_column(JSONB)
+    # Точное местоположение — более детальная информация
+    precise_location: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # "parameters" — оригинальные данные от парсера, храним в JSONB
+    parameters: Mapped[dict] = mapped_column(JSONB)
     # URL — уникальное поле
     url: Mapped[str] = mapped_column(String(500), unique=True)
