@@ -74,13 +74,10 @@ def get_database_settings() -> DatabaseSettings:
 # -------------------------------------------------------------------------
 # Настройки бота Telegram — отдельная модель, pydantic будет валидировать
 # только те переменные, которые объявлены в этом классе.
-# Если вы не хотите, чтобы pydantic вообще читал .env для бота, уберите
-# model_config или используйте отдельный файл (напр., .env.bot).
 # -------------------------------------------------------------------------
 class BotSettings(BaseSettings):
 	model_config = SettingsConfigDict(env_file=str(_env_path), env_file_encoding="utf-8", extra="ignore")
 
-	# Поменяйте типы по необходимости: здесь TOKEN обязателен, ADMINS необязателен
 	TOKEN: str
 	ADMINS: Optional[str] = None  # хранится как 'id1,id2', можно добавить парсер ниже
 

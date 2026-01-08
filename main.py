@@ -169,7 +169,7 @@ def extract_products_links(products):
     return links
 
 
-async def parse_real_estate_details(ad_url, usd_rate: Decimal) -> dict:
+async def parse_real_estate_details(ad_url, usd_rate: int) -> dict:
     """Асинхронная версия парсинга деталей объявления."""
     text = await fetch(ad_url)
     if not text:
@@ -192,7 +192,7 @@ async def parse_real_estate_details(ad_url, usd_rate: Decimal) -> dict:
     elif currency == "UZS":
         details["price_uzs"] = source_value
     elif currency == "USD":
-        # Умножаем Decimal на Decimal
+        # Умножаем на курс доллара
         details["price_uzs"] = source_value * usd_rate
     else:
         details["price_uzs"] = 0
@@ -251,7 +251,7 @@ class RealEstate:
         return "\n".join(lines)
 
 
-def parse_price_value(text: str) -> tuple[Decimal | None, str]:
+def parse_price_value(text: str) -> tuple[int | None, str]:
     """Возвращает Decimal для точности."""
     if not text:
         return None, "UNKNOWN"
@@ -267,11 +267,11 @@ def parse_price_value(text: str) -> tuple[Decimal | None, str]:
 
     num_str = m.group(1).replace(" ", "").replace(",", ".")
     try:
-        value = Decimal(num_str) # Используем Decimal!
+        value = int(num_str)
     except InvalidOperation:
         return None, "UNKNOWN"
 
-    if "$" in s or "usd" in s or "y.e" in s:
+    if "$" in s or "usd" in s or "y.e" in s or "у.е" in s:
         currency = "USD"
     else:
         currency = "UZS"
@@ -279,7 +279,7 @@ def parse_price_value(text: str) -> tuple[Decimal | None, str]:
     return value, currency
 
 
-async def get_current_usd_rate() -> Decimal:
+async def get_current_usd_rate() -> int:
     """Получает курс USD/UZS один раз."""
     url = "https://v6.exchangerate-api.com/v6/d8aad1c4d700d6cd1dc68e14/latest/USD"
     try:
@@ -287,21 +287,21 @@ async def get_current_usd_rate() -> Decimal:
         text_response = await fetch(url)
         if not text_response:
             logger.error("Пустой ответ от API курсов")
-            return Decimal("12800")  # Fallback курс, если API упал
+            return int("12800")  # Fallback курс, если API упал
 
         data = json.loads(text_response)  # Парсим строку в JSON
 
         if data.get("result") == "success":
             rate = data["conversion_rates"].get("UZS")
             logger.info(f"Актуальный курс доллара: {rate}")
-            return Decimal(str(rate))
+            return int(rate)
         else:
             logger.error("API вернул ошибку")
-            return Decimal("12800")
+            return int("12800")
 
     except Exception as e:
         logger.error(f"Ошибка получения курса: {e}")
-        return Decimal("12800") # Возвращаем примерный курс при ошибке
+        return int("12800") # Возвращаем примерный курс при ошибке
 
 
 class Query:
@@ -395,8 +395,9 @@ async def run_parsing():
         all_details = await asyncio.gather(*detail_tasks)
 
         for data in all_details:
-            if data and data.get("price_uzs"):
-                print(f"[{data['currency']}] {data['original_price']} -> {data['price_uzs']} UZS | {data['title']}")
+            if data: #and data.get("price_uzs"):
+                #print(f"[{data['currency']}] {data['original_price']} -> {data['price_uzs']} UZS | {data['title']}")
+                print(data)
 
 # Запуск программы
 if __name__ == "__main__":
@@ -407,4 +408,4 @@ if __name__ == "__main__":
     finally:
         # Закрываем клиент в конце, выходит странная ошибка RuntimeError: Event loop is closed поэтому закомментировал
         #asyncio.run(ASYNC_CLIENT.aclose())
-        print(f"Парсинг завершен")
+        print("Парсинг завершен")

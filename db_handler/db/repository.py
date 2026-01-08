@@ -1,12 +1,12 @@
 from sqlalchemy import select
-from engine import get_sessionmaker
+from engine import get_session_maker
 from models import RealEstate
 
 class RealEstateRepository:
 
     async def save(self, estate: RealEstate) -> None:
-        # Получаем sessionmaker лениво и открываем сессию
-        session_local = get_sessionmaker()
+        # Получаем session_maker лениво и открываем сессию
+        session_local = get_session_maker()
         async with session_local() as session:
             try:
                 session.add(estate)
@@ -17,7 +17,7 @@ class RealEstateRepository:
                 raise
 
     async def get_existing_urls(self) -> set[str]:
-        session_local() = get_sessionmaker()
+        session_local() = get_session_maker()
         async with session_local() as session:
             result = await session.execute(select(RealEstate.url))
             # scalars() возвращает ScalarResult — преобразуем в множество строк
