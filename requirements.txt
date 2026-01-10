@@ -6,9 +6,11 @@ APScheduler~=3.11.2
 asyncpg~=0.31.0
 python-decouple~=3.8
 python-dotenv
-ruff~=0.14.10
+ruff~=0.14.11
 httpx~=0.28.1
 SQLAlchemy~=2.0.45
 pydantic~=2.12.5
 pydantic_settings~=2.12.0
-alembic~=1.17.2
+alembic~=1.18.0
+uliweb-alembic~=0.6.9
+psycopg2~=2.9.11

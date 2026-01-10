@@ -6,6 +6,8 @@ import logging
 import httpx
 import asyncio
 from decimal import Decimal, InvalidOperation
+from db_handler.db.bulk_writer import BulkWriter
+from normilizer import normalize_real_estate
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -223,34 +225,6 @@ async def parse_real_estate_details(ad_url, usd_rate: int) -> dict:
     return details
 
 
-class RealEstate:
-    def __init__(self, base, building_details):
-        self.base = base
-        self.building_details = building_details
-
-    def format(self):
-        lines = [
-            f"🏠 {self.base['title']}",
-            "",
-            f"Область: {self.building_details.get('Область')}",
-            f"Город: {self.building_details.get('Город')}",
-            f"Район: {self.building_details.get('Район')}",
-            "",
-            f"ID: {self.building_details.get('ID')}",
-            "",
-        ]
-
-        for k, v in self.building_details.items():
-            if k in ("Область", "Город", "Район", "ID"):
-                continue
-            lines.append(f"{k}: {v}")
-
-        lines.append("")
-        lines.append(f"Цена: {self.base['price']}")
-
-        return "\n".join(lines)
-
-
 def parse_price_value(text: str) -> tuple[int | None, str]:
     """Возвращает Decimal для точности."""
     if not text:
@@ -331,14 +305,13 @@ class Filters:
 
     def price_below(self, max_price_uzs):
         def _f(item):
-            value, currency = parse_price_value(item["price"])
+            value= item["original_price"]
+            currency = item["currency"]
             if value is None:
                 return False
 
-            if currency == "EUR":
-                value *= 14000  # примерный курс
-            elif currency == "USD":
-                value *= 12500
+            if currency == "UZS":
+                value /= 12500  # примерный курс
 
             return value <= max_price_uzs
 
@@ -346,11 +319,7 @@ class Filters:
         return self
 
     def city(self, city):
-        self.rules.append(lambda item: city in item["location-and-date"])
-        return self
-
-    def status(self, status):
-        self.rules.append(lambda item: item["status"] == status)
+        self.rules.append(lambda item: city in item["location"])
         return self
 
     def keyword(self, word):
@@ -358,7 +327,7 @@ class Filters:
         return self
 
     def date(self, text):
-        self.rules.append(lambda item: text in item["location-and-date"])
+        self.rules.append(lambda item: text in item["date"])
         return self
 
     def match(self, item):
@@ -369,7 +338,6 @@ filters = (
     Filters()
     .price_below(700_000)
     .city("Ташкент")
-    .status("Новый")
     .date("Сегодня")
 )
 
@@ -377,7 +345,7 @@ results = []
 
 
 async def run_parsing():
-    target_category = "https://www.olx.uz/nedvizhimost/kvartiry/"
+    target_category = "https://www.olx.uz/nedvizhimost/"
     logger.info("Начинаем сбор товаров...")
 
     # 1. Сначала получаем курс (1 запрос)
@@ -385,19 +353,17 @@ async def run_parsing():
 
     products = await parse_products_from_category(target_category)
 
-    if "nedvizhimost" in target_category:
-        product_links = extract_products_links(products)
-        logger.info(f"Найдено {len(product_links)} объявлений.")
+    product_links = extract_products_links(products)
+    logger.info(f"Найдено {len(product_links)} объявлений.")
 
-        # 2. Передаем usd_rate внутрь каждой задачи
-        detail_tasks = [parse_real_estate_details(link, usd_rate) for link in product_links]
+    # 2. Передаем usd_rate внутрь каждой задачи
+    detail_tasks = [parse_real_estate_details(link, usd_rate) for link in product_links]
 
-        all_details = await asyncio.gather(*detail_tasks)
+    all_details = await asyncio.gather(*detail_tasks)
 
-        for data in all_details:
-            if data: #and data.get("price_uzs"):
-                #print(f"[{data['currency']}] {data['original_price']} -> {data['price_uzs']} UZS | {data['title']}")
-                print(data)
+    for data in all_details:
+        if data and filters.match(data):
+            print(data)
 
 # Запуск программы
 if __name__ == "__main__":

@@ -1,9 +1,9 @@
 from _pydatetime import datetime
-
 from sqlalchemy import String, Float, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
-from engine import Base
+from .engine import Base
+from sqlalchemy import DateTime
 
 class RealEstate(Base):
     __tablename__ = "real_estates"
@@ -13,7 +13,9 @@ class RealEstate(Base):
     # Заголовок/описание — используем Text для произвольной длины
     title: Mapped[str] = mapped_column(Text)
     # Дата и время создания (автоматически при создании записи)
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
     # Значение цены — может быть None если цена не указана
     price_value: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Валюта — короткая строка (например, 'USD', 'UZS')
