@@ -15,3 +15,5 @@ requests~=2.32.5
 ruff~=0.14.11
 SQLAlchemy~=2.0.45
 uliweb-alembic~=0.6.9
+pandas~=2.2.2
+openpyxl~=3.1.3

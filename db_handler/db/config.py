@@ -3,7 +3,7 @@ from typing import Optional
 from pathlib import Path
 
 # Определим путь к .env в корне проекта (две директории выше этого файла)
-_env_path = Path(__file__).resolve().parents[2] / '.env'
+_env_path = Path(__file__).resolve().parents[2] / ".env"
 
 # -------------------------------------------------------------------------
 # Настройки бота Telegram — отдельная модель, pydantic будет валидировать
@@ -19,7 +19,7 @@ class BotSettings(BaseSettings):
 	def admins_list(self) -> list[str]:
 		if not self.ADMINS:
 			return []
-		return [a.strip() for a in self.ADMINS.split(',') if a.strip()]
+		return [a.strip() for a in self.ADMINS.split(",") if a.strip()]
 
 # Ленивый синглтон для настроек бота
 _bot_settings_cache: BotSettings | None = None

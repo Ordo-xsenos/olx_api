@@ -1,13 +1,14 @@
 import bs4
 import json
 import re
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 import logging
 import httpx
 import asyncio
 from decimal import Decimal, InvalidOperation
-from db_handler.db.bulk_writer import BulkWriter
-from normilizer import normalize_real_estate
+
+from bs4 import BeautifulSoup
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -40,11 +41,49 @@ async def fetch(url: str) -> str | None:
             return None
 
 
-def get_text_or_default(parent, tag, cls, default="None"):
-    if parent is None:
+def get_text_or_default(parent : BeautifulSoup, tag, cls : str, default="None"):
+    """Безопасно извлекает текст из HTML-элемента.
+
+    Проблема: иногда в parent передаётся строка (или другой объект), и вызов
+    parent.find(tag, class_=cls) приводит к тому, что вызывается str.find,
+    который не поддерживает keyword-аргумент class_.
+
+    Решение: проверяем, имеет ли parent метод find (и что это не обычная
+    строка), и только в этом случае вызываем .find. Если parent — строка или
+    NavigableString — возвращаем её обрезанную форму или default.
+    """
+    # Если parent пустой (None, пустая строка и т.п.) — возвращаем default
+    if not parent:
         return default
-    el = parent.find(tag, class_=cls)
-    return el.get_text(strip=True) if el else default
+
+    # bs4.element.NavigableString ведёт себя как строка, поэтому отдельно обрабатываем строки
+    try:
+        from bs4 import element as _bs4_element
+    except Exception:
+        _bs4_element = None
+
+    # Если parent — строка или NavigableString, вернём её содержимое
+    if isinstance(parent, str) or (
+        _bs4_element is not None and isinstance(parent, _bs4_element.NavigableString)
+    ):
+        text = parent.strip()
+        return text if text else default
+
+    # Если у parent есть метод find (как у Tag/BeautifulSoup) — используем его
+    if hasattr(parent, "find") and callable(getattr(parent, "find")):
+        try:
+            el = parent.find(tag, class_=cls)
+        except TypeError:
+            # На всякий случай — если find неожиданно не поддерживает class_
+            try:
+                el = parent.find(tag)
+            except Exception:
+                return default
+
+        return el.get_text(strip=True) if el else default
+
+    # В общем случае возвращаем default
+    return default
 
 
 async def parse_category_urls(url : str) -> list[str]:
@@ -110,9 +149,7 @@ async def parse_products_from_category(category_url : str) -> list[bs4.element.T
     # Загружаем первую страницу для анализа
     text = await fetch(category_url)
     if not text:
-        logger.warning(
-            "Не удалось загрузить начальную страницу: %s", category_url
-        )
+        logger.warning("Не удалось загрузить начальную страницу: %s", category_url)
         return []
 
     soup = bs4.BeautifulSoup(text, "html.parser")
@@ -135,24 +172,7 @@ async def parse_products_from_category(category_url : str) -> list[bs4.element.T
             items = container.find_all("div", class_="css-1sw7q4x")
             all_items.extend(items)
 
-
     return all_items
-
-
-def parse_product_details(product) -> dict:
-    """Парсинг деталей товара из HTML-блока."""
-    # Используем helper get_text_or_default для безопасности
-    title = get_text_or_default(product, "h4", "css-hzlye5")
-    price = get_text_or_default(product, "p", "css-blr5zl")
-    location_and_date = get_text_or_default(product, "p", "css-1b24pxk")
-    status = get_text_or_default(product, "span", "css-1mqzepw")
-
-    return {
-        "title": title,
-        "price": price,
-        "status": status,
-        "location-and-date": location_and_date,
-    }
 
 
 def extract_products_links(products : list[bs4.element.Tag]) -> list[str]:
@@ -172,7 +192,7 @@ def extract_products_links(products : list[bs4.element.Tag]) -> list[str]:
     return links
 
 
-async def parse_real_estate_details(ad_url, usd_rate: int) -> dict:
+async def parse_product_details(ad_url, usd_rate: int) -> dict:
     """Асинхронная версия парсинга деталей объявления."""
     text = await fetch(ad_url)
     if not text:
@@ -242,7 +262,10 @@ def parse_price_value(text: str) -> tuple[int | None, str]:
 
     num_str = m.group(1).replace(" ", "").replace(",", ".")
     try:
-        value = int(num_str)
+        if "." in num_str:
+            value = float(num_str)
+        else:
+            value = int(num_str)
     except InvalidOperation:
         return None, "UNKNOWN"
 
@@ -306,7 +329,7 @@ class Filters:
 
     def price_below(self, max_price_uzs):
         def _f(item):
-            value= item["original_price"]
+            value = item["original_price"]
             currency = item["currency"]
             if value is None:
                 return False
@@ -337,9 +360,9 @@ class Filters:
 
 filters = (
     Filters()
-    .price_below(700_000)
-    .city("Ташкент")
-    .date("Сегодня")
+    .price_below(1000_000)
+    #.city("Ташкент")
+    #.date("Сегодня")
 )
 
 results = []
@@ -347,22 +370,25 @@ results = []
 
 async def run_parsing():
     categories = await parse_category_urls(main_url)
-    target_category = "https://www.olx.uz/nedvizhimost/kvartiry/"
+    url_dict = {urlparse(url).path: url for url in categories}
+    user_input = input("Введите путь категории для парсинга (например, /nedvizhimost/): ").strip()
+    if user_input not in url_dict:
+        print("Неверный путь категории.")
+        return
+    target_category = url_dict[user_input]
     logger.info("Начинаем сбор товаров...")
 
     # 1. Сначала получаем курс (1 запрос)
     usd_rate = await get_current_usd_rate()
-
     products = await parse_products_from_category(target_category)
 
     product_links = extract_products_links(products)
     logger.info(f"Найдено {len(product_links)} объявлений.")
 
     # 2. Передаем usd_rate внутрь каждой задачи
-    if "nedvizhimost" in target_category:
-        detail_tasks = [parse_real_estate_details(link, usd_rate) for link in product_links]
-    else:
-        detail_tasks = [parse_product_details(link) for link in product_links]
+    detail_tasks = [parse_product_details(link, usd_rate)
+                        for link in product_links]
+
     all_details = await asyncio.gather(*detail_tasks)
 
     for data in all_details:
@@ -376,6 +402,8 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         pass
     finally:
-        # Закрываем клиент в конце, выходит странная ошибка RuntimeError: Event loop is closed поэтому закомментировал
+        # Закрываем клиент в конце,
+        # выходит странная ошибка RuntimeError: Event loop is closed
+        # поэтому закомментировал
         #asyncio.run(ASYNC_CLIENT.aclose())
         print("Парсинг завершен")

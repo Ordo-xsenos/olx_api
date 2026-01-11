@@ -54,8 +54,8 @@ def get_session_maker() -> async_sessionmaker:
     return SessionLocal
 
 # Для прямого запуска этого файла оставим тест в блоке __main__
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Запуск теста в отдельном event loop только при прямом запуске файла
     ver = asyncio.run(db_test_connection())
-    print('Postgres version:', ver)
+    print("Postgres version:", ver)
 
