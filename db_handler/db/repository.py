@@ -17,7 +17,7 @@ class RealEstateRepository:
                 raise
 
     async def get_existing_urls(self) -> set[str]:
-        session_local() = get_session_maker()
+        session_local = get_session_maker()
         async with session_local() as session:
             result = await session.execute(select(RealEstate.url))
             # scalars() возвращает ScalarResult — преобразуем в множество строк

@@ -47,7 +47,7 @@ def get_text_or_default(parent, tag, cls, default="None"):
     return el.get_text(strip=True) if el else default
 
 
-async def parse_category_urls(url):
+async def parse_category_urls(url : str) -> list[str]:
     category_urls = []
 
     text = await fetch(url)
@@ -73,7 +73,7 @@ async def parse_category_urls(url):
     return category_urls
 
 
-def get_total_pages(soup):
+def get_total_pages(soup : bs4.BeautifulSoup) -> int:
     try:
         # Ищем контейнер с пагинацией
         pagination_container = soup.find(
@@ -104,7 +104,7 @@ def get_total_pages(soup):
         return 1
 
 
-async def parse_products_from_category(category_url):
+async def parse_products_from_category(category_url : str) -> list[bs4.element.Tag]:
     all_items = []  # Список для хранения HTML-блоков
 
     # Загружаем первую страницу для анализа
@@ -139,7 +139,8 @@ async def parse_products_from_category(category_url):
     return all_items
 
 
-def parse_product_details(product):
+def parse_product_details(product) -> dict:
+    """Парсинг деталей товара из HTML-блока."""
     # Используем helper get_text_or_default для безопасности
     title = get_text_or_default(product, "h4", "css-hzlye5")
     price = get_text_or_default(product, "p", "css-blr5zl")
@@ -154,7 +155,7 @@ def parse_product_details(product):
     }
 
 
-def extract_products_links(products):
+def extract_products_links(products : list[bs4.element.Tag]) -> list[str]:
     links = []
 
     for product in products:
@@ -345,7 +346,8 @@ results = []
 
 
 async def run_parsing():
-    target_category = "https://www.olx.uz/nedvizhimost/"
+    categories = await parse_category_urls(main_url)
+    target_category = "https://www.olx.uz/nedvizhimost/kvartiry/"
     logger.info("Начинаем сбор товаров...")
 
     # 1. Сначала получаем курс (1 запрос)
@@ -357,8 +359,10 @@ async def run_parsing():
     logger.info(f"Найдено {len(product_links)} объявлений.")
 
     # 2. Передаем usd_rate внутрь каждой задачи
-    detail_tasks = [parse_real_estate_details(link, usd_rate) for link in product_links]
-
+    if "nedvizhimost" in target_category:
+        detail_tasks = [parse_real_estate_details(link, usd_rate) for link in product_links]
+    else:
+        detail_tasks = [parse_product_details(link) for link in product_links]
     all_details = await asyncio.gather(*detail_tasks)
 
     for data in all_details:
