@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 import logging
 from keyboards.user_keyboards import (get_parsing_categories_keyboard,
                                       PARSING_CATEGORIES)
-# Импортируем "запускатор" парсинга
 from parser.main_parser import run_parsing
 
 load_dotenv()
@@ -24,21 +23,11 @@ if not logger.handlers:
 
 @start_router.message(Command("start"))
 async def start_command_handler(message: Message):
-    await message.answer("Привет! Добро пожаловать в бот.\n\n"
-                         "Для запуска парсинга отправьте команду /parse.")
-
-
-# --- Добавлено: Хендлер для команды /parse ---
-@start_router.message(Command("parse"))
-async def parse_command_handler(message: Message):
-    """
-    Этот хендлер срабатывает на команду /parse
-    и отправляет сообщение с выбором категории для парсинга.
-    """
     await message.answer(
-        "Пожалуйста, выберите категорию для парсинга:",
-        reply_markup=get_parsing_categories_keyboard(),
-    )
+             "Привет! Добро пожаловать в бот.\n\n"
+             "▶️ Для запуска парсинга отправьте команду /parse.\n"
+             "📄 Для получения отчета отправьте команду /report."
+          )
 
 
 # --- Добавлено: Хендлер для обработки нажатий на inline-кнопки ---

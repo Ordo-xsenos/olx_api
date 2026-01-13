@@ -6,11 +6,6 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-# Замени на ID твоего канала (должен начинаться с -100 для супергрупп/каналов)
-CHANNEL_ID = "@Shayxontohur_TIM"  # или -1001234567890
-
-# --- Добавлено: Список категорий для парсинга ---
-# Ключ - название для кнопки, Значение - идентификатор для callback'а
 PARSING_CATEGORIES = {
     "Детский мир": "/detskiy-mir/",
     "Недвижимость": "/nedvizhimost/",
@@ -27,28 +22,6 @@ PARSING_CATEGORIES = {
     "От застройщика": "/nedvizhimost/from_developer/",
 }
 
-
-main = ReplyKeyboardMarkup(
-    keyboard=[
-        [
-            KeyboardButton(text="📝 Fakultetga qoshilish"),
-            KeyboardButton(text="📊 Reyting"),
-        ],
-        [
-            KeyboardButton(text="ℹ️ Loyiha haqida"),
-            KeyboardButton(text="❓ Yordam"),
-        ],
-        [
-            KeyboardButton(text="⚙️ Sozlamalar"),
-            KeyboardButton(text="🎮 O'yinlar"),
-        ],
-    ],
-    resize_keyboard=True,
-    input_field_placeholder="Bo'limni tanlang...",
-)
-
-
-# --- Добавлено: Клавиатура для выбора категории парсинга ---
 def get_parsing_categories_keyboard() -> InlineKeyboardMarkup:
     """
     Создает и возвращает inline-клавиатуру с категориями для парсинга.
@@ -70,12 +43,20 @@ def get_parsing_categories_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-# Функция проверки подписки пользователя
-async def check_user_subscription(bot, user_id: int) -> bool:
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-        # Проверяем статус пользователя в канале
-        return member.status in ["creator", "administrator", "member"]
-    except Exception as e:
-        print(f"Obunani tekshirishda xatolik yuz berdi: {e}")
-        return False
+def get_report_categories_keyboard():
+    """
+    Создает клавиатуру для выбора категории отчета.
+    """
+    buttons = []
+
+    for name, category_id in PARSING_CATEGORIES.items():
+        buttons.append(
+            [InlineKeyboardButton(text=name, callback_data=f"report_category:{category_id}")]
+        )
+
+    buttons.append(
+        [InlineKeyboardButton(text="📥 Все категории", callback_data="report_category:all")]
+    )
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    return keyboard

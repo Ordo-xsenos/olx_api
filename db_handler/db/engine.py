@@ -36,7 +36,7 @@ class Base(DeclarativeBase):
 
 async def db_test_connection() -> str:
     """Тестирует подключение к базе данных и возвращает версию PostgreSQL."""
-    async with engine.connect() as conn:
+    async with async_engine.connect() as conn:
         res = await conn.execute(text("SELECT version()"))
         # res.scalar() даст строку версии
         return res.scalar()
@@ -45,7 +45,7 @@ def get_session_maker() -> async_sessionmaker:
     """Ленивая инициализация async_session_maker.
     При первом вызове создаёт engine и session_maker, используя настройки из config.
     """
-    global engine, SessionLocal
+    global async_engine, SessionLocal
     if SessionLocal is None:
         # импортируем конфиг локально, чтобы не создавать DatabaseSettings при импорте модуля
         database_url = DATABASE_URL

@@ -8,7 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from db_handler.db_class import PostgresHandler
 from middlewares.data import DbMiddleware
 
-pg_db = PostgresHandler(dsn=config("DATABASE_URL"))
+pg_db = PostgresHandler(dsn=config("SPECIAL_FOR_TGBOT_DATABASE_URL"))
 scheduler = AsyncIOScheduler(timezone="Asia/Tashkent")
 admins = [int(admin_id) for admin_id in config("ADMINS").split(",")]
 

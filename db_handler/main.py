@@ -192,7 +192,7 @@ def extract_products_links(products : list[bs4.element.Tag]) -> list[str]:
     return links
 
 
-async def parse_product_details(ad_url, usd_rate: int) -> dict:
+async def parse_product_details(ad_url, usd_rate: int, category: str) -> dict:
     """Асинхронная версия парсинга деталей объявления."""
     text = await fetch(ad_url)
     if not text:
@@ -201,6 +201,10 @@ async def parse_product_details(ad_url, usd_rate: int) -> dict:
 
     details = {}
 
+    if "nedvizhimost" in ad_url:
+        details["category"] = "nedvizhimost"
+    else:
+        details["category"] = category.removeprefix("https://www.olx.uz/").strip("/")
     details["title"] = get_text_or_default(soup, "h4", "css-1au435n")
     details["date"] = get_text_or_default(soup, "span", "css-7b83xv")
     #--- Логика ЦЕН ---
@@ -386,7 +390,7 @@ async def run_parsing():
     logger.info(f"Найдено {len(product_links)} объявлений.")
 
     # 2. Передаем usd_rate внутрь каждой задачи
-    detail_tasks = [parse_product_details(link, usd_rate)
+    detail_tasks = [parse_product_details(link, usd_rate, target_category)
                         for link in product_links]
 
     all_details = await asyncio.gather(*detail_tasks)

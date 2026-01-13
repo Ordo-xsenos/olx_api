@@ -12,8 +12,6 @@ if not logger.handlers:
     )
     logger.addHandler(ch)
 
-DEFAULT_FACULTIES = ["Gryffindor", "Hufflepuff", "Ravenclaw", "Slytherin"]
-
 
 class PostgresHandler:
     """Класс для работы с PostgreSQL базой данных через asyncpg"""

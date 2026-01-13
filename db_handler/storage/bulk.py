@@ -29,12 +29,13 @@ class BulkWriter:
             # пример executemany с ON CONFLICT
             await conn.executemany(
                 """
-                INSERT INTO real_estates (url, title, price_value, currency, 
+                INSERT INTO products (url, category, title, price, currency, 
                             location, precise_location, parameters, olx_id)
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8, $9)
                 ON CONFLICT (url) DO UPDATE
-                SET title = EXCLUDED.title,
-                    price_value = EXCLUDED.price_value,
+                SET category = EXCLUDED.category,
+                    title = EXCLUDED.title,
+                    price = EXCLUDED.price,
                     currency = EXCLUDED.currency,
                     parameters = EXCLUDED.parameters,
                     precise_location = EXCLUDED.precise_location,
@@ -44,7 +45,8 @@ class BulkWriter:
                     (
                         r["url"],
                         r.get("title"),
-                        r.get("price_value"),
+                        r.get("category"),
+                        r.get("price"),
                         r.get("currency"),
                         r.get("location"),
                         r.get("precise_location"),
