@@ -107,7 +107,6 @@ async def parse_command_handler(message: Message, db: PostgresHandler) -> None:
 
 
 @start_router.message(Command("report"))
-@start_router.message(Command("export"))
 async def report_command_handler(message: Message, db: PostgresHandler) -> None:
     if not await _ensure_user(db, message.from_user):
         await message.answer("Доступ к боту ограничен.")

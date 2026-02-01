@@ -34,7 +34,7 @@ async def scrape_category_data(category_id: str) -> tuple[list[dict], int]:
 
 async def run_parsing(
     bot: Bot,
-    chat_id: int,
+    chat_id: int | None,
     category_id: str,
     category_name: str,
     db=None,
@@ -50,10 +50,11 @@ async def run_parsing(
                 parsed_urls.append(normalized["url"])
 
         if not normalized_rows:
-            await bot.send_message(
-                chat_id,
-                f"😕 По категории «{category_name}» ничего не найдено.",
-            )
+            if chat_id is not None:
+                await bot.send_message(
+                    chat_id,
+                    f"😕 По категории «{category_name}» ничего не найдено.",
+                )
             return
 
         await save_parsed_data(normalized_rows)
@@ -78,18 +79,20 @@ async def run_parsing(
                     ratio * 100,
                 )
 
-        await bot.send_message(
-            chat_id=chat_id,
-            text=(
-                f"✅ Парсинг категории «{category_name}» завершен.\n\n"
-                "Теперь вы можете запросить отчет с помощью команды /report."
-            ),
-        )
+        if chat_id is not None:
+            await bot.send_message(
+                chat_id=chat_id,
+                text=(
+                    f"✅ Парсинг категории «{category_name}» завершен.\n\n"
+                    "Теперь вы можете запросить отчет с помощью команды /report."
+                ),
+            )
     except Exception as e:
-        await bot.send_message(
-            chat_id,
-            (
-                f"❌ Произошла ошибка при парсинге категории «{category_name}».\n"
-                f"Техническая информация: {e}"
-            ),
-        )
+        if chat_id is not None:
+            await bot.send_message(
+                chat_id,
+                (
+                    f"❌ Произошла ошибка при парсинге категории «{category_name}».\n"
+                    f"Техническая информация: {e}"
+                ),
+            )

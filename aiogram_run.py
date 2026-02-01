@@ -7,6 +7,7 @@ from create_bot import bot, dp, scheduler
 from create_bot import pg_db
 # from work_time.time_func import broadcast_text, BROADCAST_TEXT
 from handlers.start import start_router
+from work_time.time_func import parse_all_categories_once
 from db_handler.services.repository import (
     get_user_by_tg_id,
     get_user_by_username,
@@ -44,6 +45,12 @@ async def main():
             minute=int(minute),
             args=[bot, int(chat_id), schedule_category, schedule_category_name, pg_db],
         )
+    scheduler.add_job(
+        parse_all_categories_once,
+        "interval",
+        hours=1,
+        args=[bot, pg_db, None],
+    )
     scheduler.start()
     dp.include_router(start_router)
 
