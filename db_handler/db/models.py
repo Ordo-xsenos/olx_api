@@ -13,7 +13,7 @@ class Product(Base):
     # Заголовок/описание — используем Text для произвольной длины
     title: Mapped[str] = mapped_column(Text)
     # Категория объявления
-    category: Mapped[str] = mapped_column(String(100), nullable=True)
+    category: Mapped[str] = mapped_column(String(100))
     # Дата и время создания (автоматически при создании записи)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

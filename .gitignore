@@ -68,3 +68,5 @@ local_settings.py
 
 # Ignore build artifacts for Cython
 cython_debug/
+
+.codexrc
