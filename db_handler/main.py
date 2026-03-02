@@ -1,7 +1,7 @@
 import bs4
 import json
 import re
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, urlsplit, urlunsplit
 import logging
 import httpx
 import asyncio
@@ -27,6 +27,13 @@ ASYNC_CLIENT = httpx.AsyncClient(
 )
 
 
+def normalize_listing_url(raw_url: str) -> str:
+	"""Возвращает канонический URL объявления без параметров запроса и фрагментов."""
+	parts = urlsplit(raw_url)
+	path = parts.path.rstrip("/") or parts.path
+	return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
+
+
 async def fetch(url: str) -> str | None:
 	"""Асинхронное скачивание страницы с ограничением через семафор."""
 	async with semaphore:
@@ -37,6 +44,7 @@ async def fetch(url: str) -> str | None:
 			await asyncio.sleep(0.1)
 			return resp.text
 		except Exception as e:
+			logger.error("Ошибка асинхронного запроса %s: %s %r", url, type(e).__name__, e)
 			logger.error("Ошибка асинхронного запроса %s: %s", url, e)
 			return None
 
@@ -56,7 +64,6 @@ def get_text_or_default(parent : BeautifulSoup, tag, cls : str, default="None"):
 	if not parent:
 		return default
 
-	# bs4.element.NavigableString ведёт себя как строка, поэтому отдельно обрабатываем строки
 	try:
 		from bs4 import element as _bs4_element
 	except Exception:
@@ -206,7 +213,9 @@ async def parse_product_details(ad_url, usd_rate: int, category: str) -> dict:
 	else:
 		details["category"] = category.removeprefix("https://www.olx.uz/").strip("/")
 	details["title"] = get_text_or_default(soup, "h4", "css-1au435n")
-	details["date"] = get_text_or_default(soup, "span", "css-7b83xv")
+	details["date"] = get_text_or_default(soup, "data-testid", "ad-posted-at")
+	if details["date"] == "None":
+		details["date"] = get_text_or_default(soup, "span", "css-1br3d2a")
 	#--- Логика ЦЕН ---
 	raw_price_value = get_text_or_default(soup, "h3", "css-yauxmy")
 	source_value, currency = parse_price_value(raw_price_value)
@@ -244,14 +253,15 @@ async def parse_product_details(ad_url, usd_rate: int, category: str) -> dict:
 			parameter = parameter.get_text()
 			parameters_list.append(parameter)
 	details["parameters"] = parameters_list
-	details["olx_id"] = get_text_or_default(soup, "span", "css-ooacec")
-	details["url"] = ad_url
+	olx_id = get_text_or_default(soup, "span", "css-ooacec")
+	details["olx_id"] = olx_id if olx_id and olx_id != "None" else None
+	details["url"] = normalize_listing_url(ad_url)
 
 	return details
 
 
 def parse_price_value(text: str) -> tuple[int | None, str]:
-	"""Возвращает Decimal для точности."""
+	"""Извлекает числовое значение цены и валюту из текстовой строки."""
 	if not text:
 		return None, "UNKNOWN"
 
@@ -291,7 +301,7 @@ async def get_current_usd_rate() -> int:
 		text_response = await fetch(url)
 		if not text_response:
 			logger.error("Пустой ответ от API курсов")
-			return int("12800")  # Fallback курс, если API упал
+			return int("12800")  # Резервный курс, если API недоступен
 
 		data = json.loads(text_response)  # Парсим строку в JSON
 
@@ -300,7 +310,7 @@ async def get_current_usd_rate() -> int:
 			logger.info(f"Актуальный курс доллара: {rate}")
 			return int(rate)
 		else:
-			logger.error("API вернул ошибку")
+			logger.error("Сервис курсов вернул ошибку")
 			return int("12800")
 
 	except Exception as e:
@@ -366,7 +376,7 @@ class Filters:
 
 filters = (
 	Filters()
-	.price_below(1000_000)
+	#.price_below(1000_000)
 	#.city("Ташкент")
 	#.date("Сегодня")
 )
@@ -408,8 +418,6 @@ if __name__ == "__main__":
 	except KeyboardInterrupt:
 		pass
 	finally:
-		# Закрываем клиент в конце,
-		# выходит странная ошибка RuntimeError: Event loop is closed
-		# поэтому закомментировал
-		#asyncio.run(ASYNC_CLIENT.aclose())
+		# Закрытие клиента отключено:
+		# при завершении возникает RuntimeError "Event loop is closed".
 		print("Парсинг завершен")

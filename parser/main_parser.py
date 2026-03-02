@@ -1,16 +1,19 @@
 import asyncio
 import logging
 import os
+from typing import Any
 from urllib.parse import urljoin
 
 from aiogram import Bot
 
+from db_handler.db.engine import SessionLocal
 from db_handler.main import (
     extract_products_links,
     get_current_usd_rate,
     parse_product_details,
     parse_products_from_category,
 )
+from db_handler.services.outbox_service import enqueue_webhook
 from db_handler.services.persistense import save_parsed_data
 from db_handler.services.repository import delete_missing_by_category
 from parser.normalizer import normalize_product
@@ -20,7 +23,7 @@ MAIN_URL = "https://www.olx.uz"
 logger = logging.getLogger(__name__)
 
 
-async def scrape_category_data(category_id: str) -> tuple[list[dict], int]:
+async def scrape_category_data(category_id: str) -> tuple[tuple[Any], int]:
     category_url = urljoin(MAIN_URL, category_id.lstrip("/"))
     usd_rate = await get_current_usd_rate()
     products = await parse_products_from_category(category_url)
@@ -58,6 +61,9 @@ async def run_parsing(
             return
 
         await save_parsed_data(normalized_rows)
+        if os.getenv("WEBHOOK_URL"):
+            async with SessionLocal() as session:
+                await enqueue_webhook(session, os.getenv("WEBHOOK_URL"), normalized_rows)
 
         cleanup_enabled = os.getenv("CLEANUP_MISSING", "0") == "1"
         if cleanup_enabled and db is not None:
@@ -67,13 +73,13 @@ async def run_parsing(
                     db, category_id, parsed_urls
                 )
                 logger.info(
-                    "Cleanup removed %s missing rows for category %s",
+                    "Очистка удалила %s отсутствующих строк для категории %s",
                     deleted,
                     category_id,
                 )
             else:
                 logger.warning(
-                    "Cleanup skipped: parsed %s/%s (%.1f%%) < 90%%",
+                    "Очистка пропущена: распарсено %s/%s (%.1f%%) < 90%%",
                     len(parsed_urls),
                     total_links,
                     ratio * 100,

@@ -13,7 +13,7 @@ load_dotenv(find_dotenv())
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# create_async_engine ожидает строку подключения с async драйвером (например, asyncpg)
+# Функция create_async_engine ожидает строку подключения с async-драйвером (например, asyncpg)
 async_engine = create_async_engine(
     DATABASE_URL,
     echo=False,
@@ -38,7 +38,7 @@ async def db_test_connection() -> str:
     """Тестирует подключение к базе данных и возвращает версию PostgreSQL."""
     async with async_engine.connect() as conn:
         res = await conn.execute(text("SELECT version()"))
-        # res.scalar() даст строку версии
+        # Метод res.scalar() вернет строку версии
         return res.scalar()
 
 def get_session_maker() -> async_sessionmaker:
@@ -57,5 +57,5 @@ def get_session_maker() -> async_sessionmaker:
 if __name__ == "__main__":
     # Запуск теста в отдельном event loop только при прямом запуске файла
     ver = asyncio.run(db_test_connection())
-    print("Postgres version:", ver)
+    print("Версия Postgres:", ver)
 

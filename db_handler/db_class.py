@@ -51,7 +51,7 @@ class PostgresHandler:
                     raise
                 sleep_for = base_delay * (2 ** (attempt - 1))
                 logger.warning(
-                    "DB retry %s/%s after error: %s",
+                    "Повтор запроса к БД %s/%s после ошибки: %s",
                     attempt,
                     max_attempts,
                     exc,
@@ -171,7 +171,7 @@ class PostgresHandler:
             return await self._with_retries(_run)
         except Exception as e:
             logger.error(f"Ошибка выполнения запроса: {e}")
-            logger.error(f"SQL: {query}")
+            logger.error(f"SQL-запрос: {query}")
             return None
 
     async def fetch_query(self, query: str, *params) -> List[Dict[str, Any]]:
@@ -185,7 +185,7 @@ class PostgresHandler:
             return await self._with_retries(_run)
         except Exception as e:
             logger.error(f"Ошибка выполнения SELECT запроса: {e}")
-            logger.error(f"SQL: {query}")
+            logger.error(f"SQL-запрос: {query}")
             return []
 
     async def fetchrow_query(
@@ -201,5 +201,5 @@ class PostgresHandler:
             return await self._with_retries(_run)
         except Exception as e:
             logger.error(f"Ошибка выполнения SELECT запроса: {e}")
-            logger.error(f"SQL: {query}")
+            logger.error(f"SQL-запрос: {query}")
             return None

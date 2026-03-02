@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 from create_bot import bot, dp, scheduler
 from create_bot import pg_db
-# from work_time.time_func import broadcast_text, BROADCAST_TEXT
 from handlers.start import start_router
 from work_time.time_func import parse_all_categories_once
 from db_handler.services.repository import (
@@ -15,7 +14,7 @@ from db_handler.services.repository import (
     mark_admin_by_username,
 )
 from parser.main_parser import run_parsing
-
+from db_handler.scheduler.outbox_scheduler import register_outbox_scheduler
 
 load_dotenv()
 
@@ -35,7 +34,7 @@ async def main():
     schedule_category = os.getenv("SCHEDULE_CATEGORY_ID")
     schedule_category_name = os.getenv("SCHEDULE_CATEGORY_NAME", schedule_category)
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    schedule_time = os.getenv("PARSE_SCHEDULE_TIME")  # format: HH:MM
+    schedule_time = os.getenv("PARSE_SCHEDULE_TIME")  # формат: HH:MM
     if schedule_category and chat_id and schedule_time and ":" in schedule_time:
         hour, minute = schedule_time.split(":", 1)
         scheduler.add_job(
@@ -51,6 +50,7 @@ async def main():
         hours=1,
         args=[bot, pg_db, None],
     )
+    register_outbox_scheduler(scheduler)
     scheduler.start()
     dp.include_router(start_router)
 
@@ -62,4 +62,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Exit")
+        print("Выход")

@@ -7,9 +7,9 @@ logger = logging.getLogger(__name__)
 
 
 async def parse_all_categories_once(bot, db, chat_id: int | None = None) -> None:
-    """Parse all categories sequentially and save results to DB."""
+    """Последовательно парсит все категории и сохраняет результаты в БД."""
     for category_name, category_id in PARSING_CATEGORIES.items():
-        logger.info("Scheduled parsing started: %s", category_name)
+        logger.info("Запущен плановый парсинг категории: %s", category_name)
         await run_parsing(
             bot=bot,
             chat_id=chat_id,
@@ -21,7 +21,7 @@ async def parse_all_categories_once(bot, db, chat_id: int | None = None) -> None
 
 
 async def parse_all_categories_hourly(bot, db, chat_id: int | None = None) -> None:
-    """Run parsing for all categories every hour."""
+    """Запускает парсинг всех категорий каждый час."""
     while True:
         await parse_all_categories_once(bot=bot, db=db, chat_id=chat_id)
         await asyncio.sleep(3600)

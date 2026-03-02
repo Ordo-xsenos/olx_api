@@ -21,7 +21,7 @@ async def save_parsed_data(data: List[Dict]) -> None:
         for batch in _chunked(data, batch_size):
             await writer.insert_many(batch)
             total += len(batch)
-            logger.info("Batch saved: %s items", len(batch))
-        logger.info("Total saved: %s items", total)
+            logger.info("Сохранен пакет: %s элементов", len(batch))
+        logger.info("Всего сохранено: %s элементов", total)
     finally:
         await writer.close()

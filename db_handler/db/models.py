@@ -1,9 +1,14 @@
-from _pydatetime import datetime
-from sqlalchemy import String, Float, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from .engine import Base
-from sqlalchemy import DateTime
+import enum
+import uuid
+from datetime import datetime
+from sqlalchemy import (
+    String, Integer, DateTime, JSON, Enum, Float, func, Text, Column
+)
+from sqlalchemy.dialects.postgresql import UUID
+
 
 class Product(Base):
     __tablename__ = "products"
@@ -28,7 +33,32 @@ class Product(Base):
     precise_location: Mapped[str | None] = mapped_column(String(300), nullable=True)
     # "parameters" — оригинальные данные от парсера, храним в JSONB
     parameters: Mapped[dict] = mapped_column(JSONB)
-    # ID на OLX — может быть None если не указано
+    # Идентификатор на OLX — может быть None, если не указано
     olx_id: Mapped[str] = mapped_column(String(100), nullable=True, unique=True)
-    # URL — уникальное поле
+    # Ссылка — уникальное поле
     url: Mapped[str] = mapped_column(String(500), unique=True)
+
+
+class OutboxStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    SENT = "SENT"
+    FAILED = "FAILED"
+    DEAD = "DEAD"
+
+
+class WebhookOutbox(Base):
+    __tablename__ = "webhook_outbox"
+
+    # Используем Mapped для типизации
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    target_url: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+    status: Mapped[OutboxStatus] = mapped_column(Enum(OutboxStatus), default=OutboxStatus.PENDING)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+
+    next_retry_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

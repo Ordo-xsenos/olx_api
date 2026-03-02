@@ -24,7 +24,7 @@ class BulkWriter:
     async def start(self) -> None:
         dsn = _resolve_raw_dsn()
         if not dsn:
-            raise RuntimeError("RAW_DSN or DATABASE_URL is not set")
+            raise RuntimeError("Не задан RAW_DSN или DATABASE_URL")
         self.pool = await asyncpg.create_pool(
             dsn=dsn,
             min_size=1,
@@ -56,7 +56,7 @@ class BulkWriter:
                     raise
                 sleep_for = base_delay * (2 ** (attempt - 1))
                 self.logger.warning(
-                    "BulkWriter retry %s/%s after error: %s",
+                    "Повтор BulkWriter %s/%s после ошибки: %r",
                     attempt,
                     max_attempts,
                     exc,
@@ -69,10 +69,56 @@ class BulkWriter:
             return
         if not self.pool:
             await self.start()
+        prepared_rows = [
+            (
+                r["url"],
+                r.get("category"),
+                r.get("title"),
+                r.get("price"),
+                r.get("currency"),
+                r.get("location"),
+                r.get("precise_location"),
+                json.dumps(r.get("parameters") or {}),
+                r.get("olx_id"),
+            )
+            for r in rows
+        ]
+
         async def _run() -> None:
             async with self.pool.acquire() as conn:
                 await conn.executemany(
                     """
+                    WITH updated_by_olx AS (
+                        UPDATE products
+                        SET
+                            url = $1,
+                            category = $2,
+                            title = $3,
+                            price = $4,
+                            currency = $5,
+                            location = $6,
+                            precise_location = $7,
+                            parameters = $8::jsonb,
+                            olx_id = COALESCE($9::text, products.olx_id)
+                        WHERE $9::text IS NOT NULL AND olx_id = $9::text
+                        RETURNING id
+                    ),
+                    updated_by_url AS (
+                        UPDATE products
+                        SET
+                            category = $2,
+                            title = $3,
+                            price = $4,
+                            currency = $5,
+                            location = $6,
+                            precise_location = $7,
+                            parameters = $8::jsonb,
+                            olx_id = COALESCE($9::text, products.olx_id)
+                        WHERE
+                            NOT EXISTS (SELECT 1 FROM updated_by_olx)
+                            AND url = $1
+                        RETURNING id
+                    )
                     INSERT INTO products (
                         url,
                         category,
@@ -84,32 +130,22 @@ class BulkWriter:
                         parameters,
                         olx_id
                     )
-                    VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
-                    ON CONFLICT (url) DO UPDATE
-                    SET category = EXCLUDED.category,
-                        title = EXCLUDED.title,
-                        price = EXCLUDED.price,
-                        currency = EXCLUDED.currency,
-                        location = EXCLUDED.location,
-                        precise_location = EXCLUDED.precise_location,
-                        parameters = EXCLUDED.parameters,
-                        olx_id = EXCLUDED.olx_id
+                    SELECT
+                        $1,
+                        $2,
+                        $3,
+                        $4,
+                        $5,
+                        $6,
+                        $7,
+                        $8::jsonb,
+                        $9::text
+                    WHERE
+                        NOT EXISTS (SELECT 1 FROM updated_by_olx)
+                        AND NOT EXISTS (SELECT 1 FROM updated_by_url)
                     """,
-                    [
-                        (
-                            r["url"],
-                            r.get("category"),
-                            r.get("title"),
-                            r.get("price"),
-                            r.get("currency"),
-                            r.get("location"),
-                            r.get("precise_location"),
-                            json.dumps(r.get("parameters") or {}),
-                            r.get("olx_id"),
-                        )
-                        for r in rows
-                    ],
+                    prepared_rows,
                 )
 
         await self._with_retries(_run)
-        self.logger.info("Upserted %s rows into products", len(rows))
+        self.logger.info("Синхронизировано %s строк в products", len(rows))
