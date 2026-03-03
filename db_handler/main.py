@@ -101,7 +101,7 @@ async def parse_category_urls(url : str) -> list[str]:
 		return category_urls
 
 	soup = bs4.BeautifulSoup(text, "html.parser")
-	category = soup.find_all("div", class_="css-1rwzo2t")
+	category = soup.find_all("div", class_="css-1gw3rcq")
 	if not category:
 		return category_urls
 	link_tag = category[0].find_all("a")
