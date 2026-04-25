@@ -16,6 +16,7 @@ from db_handler.main import (
 from db_handler.services.outbox_service import enqueue_webhook
 from db_handler.services.persistense import save_parsed_data
 from db_handler.services.repository import delete_missing_by_category
+from db_handler.services.webhook_serializer import serialize_for_webhook
 from parser.normalizer import normalize_product
 
 
@@ -63,7 +64,8 @@ async def run_parsing(
         await save_parsed_data(normalized_rows)
         if os.getenv("WEBHOOK_URL"):
             async with SessionLocal() as session:
-                await enqueue_webhook(session, os.getenv("WEBHOOK_URL"), normalized_rows)
+                serialized_rows = serialize_for_webhook(normalized_rows)
+                await enqueue_webhook(session, os.getenv("WEBHOOK_URL"), serialized_rows)
 
         cleanup_enabled = os.getenv("CLEANUP_MISSING", "0") == "1"
         if cleanup_enabled and db is not None:

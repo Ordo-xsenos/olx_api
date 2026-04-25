@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import time
 
 from aiogram import Router, F
@@ -8,6 +9,9 @@ from aiogram.types import BufferedInputFile, CallbackQuery, Message
 from dotenv import load_dotenv
 
 from db_handler.db_class import PostgresHandler
+from db_handler.db.engine import SessionLocal
+from db_handler.services.outbox_service import enqueue_webhook
+from db_handler.services.webhook_serializer import serialize_for_webhook
 from db_handler.services.repository import (
     get_allow_non_admins,
     get_stats,
@@ -138,6 +142,12 @@ async def latest_command_handler(message: Message, db: PostgresHandler) -> None:
         price_text = f"{price} {currency}".strip() if price is not None else "Цена не указана"
         lines.append(f"• {item.get('title')}\n{price_text}\n{item.get('url')}")
     await message.answer("\n\n".join(lines))
+
+    # Отправка вебхука
+    if os.getenv("WEBHOOK_URL"):
+        async with SessionLocal() as session:
+            serialized_rows = serialize_for_webhook(rows)
+            await enqueue_webhook(session, os.getenv("WEBHOOK_URL"), serialized_rows)
 
 
 @start_router.message(Command("filters"))

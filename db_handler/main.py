@@ -9,10 +9,16 @@ from decimal import Decimal, InvalidOperation
 
 from bs4 import BeautifulSoup
 
+from parser.selectors import CATEGORY_PAGE_SELECTORS, PRODUCT_PAGE_SELECTORS
+from parser.selector_utils import find_with_fallback, get_text_or_default as get_text_fallback
+
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Для отладки селекторов можно установить DEBUG уровень
+# logger.setLevel(logging.DEBUG)
 
 main_url = "https://www.olx.uz"
 # Ограничиваем количество одновременных запросов (чтобы не забанили)
@@ -49,48 +55,45 @@ async def fetch(url: str) -> str | None:
 			return None
 
 
-def get_text_or_default(parent : BeautifulSoup, tag, cls : str, default="None"):
-	"""Безопасно извлекает текст из HTML-элемента.
+def get_text_or_default(parent: BeautifulSoup | bs4.Tag, tag, cls: str, default="None"):
+    """
+    Безопасно извлекает текст из HTML-элемента.
+    Устаревшая функция, оставлена для обратной совместимости.
+    Рекомендуется использовать get_text_fallback() с селекторами.
+    """
+    # Если parent пустой (None, пустая строка и т.п.) — возвращаем default
+    if not parent:
+        return default
 
-	Проблема: иногда в parent передаётся строка (или другой объект), и вызов
-	parent.find(tag, class_=cls) приводит к тому, что вызывается str.find,
-	который не поддерживает keyword-аргумент class_.
+    try:
+        from bs4 import element as _bs4_element
+    except Exception:
+        _bs4_element = None
 
-	Решение: проверяем, имеет ли parent метод find (и что это не обычная
-	строка), и только в этом случае вызываем .find. Если parent — строка или
-	NavigableString — возвращаем её обрезанную форму или default.
-	"""
-	# Если parent пустой (None, пустая строка и т.п.) — возвращаем default
-	if not parent:
-		return default
+    # Если parent — строка или NavigableString, вернём её содержимое
+    if isinstance(parent, str) or (
+            _bs4_element is not None and isinstance(parent, _bs4_element.NavigableString)
+    ):
+        text = parent.strip()
+        return text if text else default
 
-	try:
-		from bs4 import element as _bs4_element
-	except Exception:
-		_bs4_element = None
+    # Если у parent есть метод find (как у Tag/BeautifulSoup) — используем его
+    if hasattr(parent, "find") and callable(getattr(parent, "find")):
+        try:
+            el = parent.find(tag, class_=cls)
+        except TypeError:
+            # На всякий случай — если find неожиданно не поддерживает class_
+            try:
+                el = parent.find(tag)
+            except Exception:
+                return default
 
-	# Если parent — строка или NavigableString, вернём её содержимое
-	if isinstance(parent, str) or (
-			_bs4_element is not None and isinstance(parent, _bs4_element.NavigableString)
-	):
-		text = parent.strip()
-		return text if text else default
+            return el.get_text(strip=True) if el else default
 
-	# Если у parent есть метод find (как у Tag/BeautifulSoup) — используем его
-	if hasattr(parent, "find") and callable(getattr(parent, "find")):
-		try:
-			el = parent.find(tag, class_=cls)
-		except TypeError:
-			# На всякий случай — если find неожиданно не поддерживает class_
-			try:
-				el = parent.find(tag)
-			except Exception:
-				return default
+        return el.get_text(strip=True) if el else default
 
-		return el.get_text(strip=True) if el else default
-
-	# В общем случае возвращаем default
-	return default
+    # В общем случае возвращаем default
+    return default
 
 
 async def parse_category_urls(url : str) -> list[str]:
@@ -150,114 +153,234 @@ def get_total_pages(soup : bs4.BeautifulSoup) -> int:
 		return 1
 
 
-async def parse_products_from_category(category_url : str) -> list[bs4.element.Tag]:
-	all_items = []  # Список для хранения HTML-блоков
+async def parse_products_from_category(category_url: str) -> list[bs4.element.Tag]:
+    """
+    Парсит товары из категории с использованием fallback-селекторов.
+    
+    Использует приоритет:
+    1. data-testid="listing-grid" для контейнера
+    2. data-testid="l-card" для карточек товаров
+    3. CSS классы как fallback
+    """
+    all_items = []  # Список для хранения HTML-блоков
 
-	# Загружаем первую страницу для анализа
-	text = await fetch(category_url)
-	if not text:
-		logger.warning("Не удалось загрузить начальную страницу: %s", category_url)
-		return []
+    # Загружаем первую страницу для анализа
+    text = await fetch(category_url)
+    if not text:
+        logger.warning("Не удалось загрузить начальную страницу: %s", category_url)
+        return []
 
-	soup = bs4.BeautifulSoup(text, "html.parser")
-	total_pages = get_total_pages(soup)
+    soup = bs4.BeautifulSoup(text, "html.parser")
+    total_pages = get_total_pages(soup)
 
-	# Проходим по всем страницам
-	for page_num in range(1, total_pages + 1):
-		logger.info("Сбор товаров: страница %s из %s", page_num, total_pages)
+    # Проходим по всем страницам
+    for page_num in range(1, total_pages + 1):
+        logger.info("Сбор товаров: страница %s из %s", page_num, total_pages)
 
-		if page_num > 1:
-			current_url = f"{category_url.rstrip('/')}/?page={page_num}"
-			page_text = await fetch(current_url)
-			if not page_text:
-				continue
-			soup = bs4.BeautifulSoup(page_text, "html.parser")
+        if page_num > 1:
+            current_url = f"{category_url.rstrip('/')}/?page={page_num}"
+            page_text = await fetch(current_url)
+            if not page_text:
+                continue
+            soup = bs4.BeautifulSoup(page_text, "html.parser")
 
-		# Находим контейнер и товары
-		container = soup.find("div", class_="css-j0t2x2")
-		if container:
-			items = container.find_all("div", class_="css-1sw7q4x")
-			all_items.extend(items)
+        # Находим контейнер с товарами (используем fallback-селекторы)
+        container = find_with_fallback(
+            soup,
+            CATEGORY_PAGE_SELECTORS["product_container"],
+            default=None,
+            selector_name="product_container"
+        )
+        
+        if container:
+            # Находим все карточки товаров
+            items = find_with_fallback(
+                container,
+                CATEGORY_PAGE_SELECTORS["product_card"],
+                default=[],
+                all=True,
+                selector_name="product_card"
+            )
+            all_items.extend(items)
+        else:
+            logger.warning(
+                "Контейнер товаров не найден на %s. Пробуем альтернативу...",
+                category_url
+            )
+            # Альтернатива: ищем все карточки напрямую
+            items = find_with_fallback(
+                soup,
+                CATEGORY_PAGE_SELECTORS["product_card"],
+                default=[],
+                all=True,
+                selector_name="product_card"
+            )
+            all_items.extend(items)
 
-	return all_items
+    logger.info("Найдено товаров: %s", len(all_items))
+    return all_items
 
 
-def extract_products_links(products : list[bs4.element.Tag]) -> list[str]:
-	links = []
+def extract_products_links(products: list[bs4.element.Tag]) -> list[str]:
+    """
+    Извлекает ссылки на товары из карточек с использованием fallback-селекторов.
+    """
+    links = []
 
-	for product in products:
-		a = product.find("a", href=True)
-		if not a:
-			continue
+    for product in products:
+        # Ищем ссылку с приоритетом: href содержит /torg/ или /d/obyavlenie/
+        a = find_with_fallback(
+            product,
+            CATEGORY_PAGE_SELECTORS["product_link"],
+            default=None,
+            selector_name="product_link"
+        )
+        
+        if not a:
+            # Альтернатива: просто первая ссылка в карточке
+            a = product.find("a", href=True)
+        
+        if not a:
+            continue
 
-		href = a["href"]
-		if not href.startswith("http"):
-			href = urljoin(main_url, href)
+        href = a.get("href")
+        if not href:
+            continue
+            
+        if not href.startswith("http"):
+            href = urljoin(main_url, href)
 
-		links.append(href)
+        links.append(href)
 
-	return links
+    return links
 
 
 async def parse_product_details(ad_url, usd_rate: int, category: str) -> dict:
-	"""Асинхронная версия парсинга деталей объявления."""
-	text = await fetch(ad_url)
-	if not text:
-		return {}
-	soup = bs4.BeautifulSoup(text, "html.parser")
+    """
+    Асинхронная версия парсинга деталей объявления.
+    Использует fallback-селекторы для устойчивости к изменениям вёрстки.
+    """
+    text = await fetch(ad_url)
+    if not text:
+        return {}
+    soup = bs4.BeautifulSoup(text, "html.parser")
 
-	details = {}
+    details = {}
 
-	if "nedvizhimost" in ad_url:
-		details["category"] = "nedvizhimost"
-	else:
-		details["category"] = category.removeprefix("https://www.olx.uz/").strip("/")
-	details["title"] = get_text_or_default(soup, "h4", "css-1au435n")
-	details["date"] = get_text_or_default(soup, "data-testid", "ad-posted-at")
-	if details["date"] == "None":
-		details["date"] = get_text_or_default(soup, "span", "css-1br3d2a")
-	#--- Логика ЦЕН ---
-	raw_price_value = get_text_or_default(soup, "h3", "css-yauxmy")
-	source_value, currency = parse_price_value(raw_price_value)
+    # Категория
+    if "nedvizhimost" in ad_url:
+        details["category"] = "nedvizhimost"
+    else:
+        details["category"] = category.removeprefix("https://www.olx.uz/").strip("/")
+    
+    # Заголовок — используем селекторы с fallback
+    details["title"] = get_text_fallback(
+        soup,
+        PRODUCT_PAGE_SELECTORS["title"],
+        default="None",
+        selector_name="title"
+    )
+    
+    # Дата публикации
+    details["date"] = get_text_fallback(
+        soup,
+        PRODUCT_PAGE_SELECTORS["date"],
+        default="None",
+        selector_name="date"
+    )
+    # Fallback для даты
+    if details["date"] == "None":
+        details["date"] = get_text_fallback(
+            soup,
+            [{"class_": "css-1br3d2a"}, {"tag": "span"}],
+            default="None",
+            selector_name="date_fallback"
+        )
+    
+    #--- Логика ЦЕН ---
+    raw_price_value = get_text_fallback(
+        soup,
+        PRODUCT_PAGE_SELECTORS["price"],
+        default="None",
+        selector_name="price"
+    )
+    source_value, currency = parse_price_value(raw_price_value)
 
-	details["original_price"] = source_value  # Сохраняем то, что было
-	details["currency"] = currency
-	# Конвертация в сумы для сортировки в БД
-	if source_value is None:
-		details["price_uzs"] = None  # Цена не указана
-	elif currency == "UZS":
-		details["price_uzs"] = source_value
-	elif currency == "USD":
-		# Умножаем на курс доллара
-		details["price_uzs"] = source_value * usd_rate
-	else:
-		details["price_uzs"] = 0
+    details["original_price"] = source_value  # Сохраняем то, что было
+    details["currency"] = currency
+    
+    # Конвертация в сумы для сортировки в БД
+    if source_value is None:
+        details["price_uzs"] = None  # Цена не указана
+    elif currency == "UZS":
+        details["price_uzs"] = source_value
+    elif currency == "USD":
+        # Умножаем на курс доллара
+        details["price_uzs"] = source_value * usd_rate
+    else:
+        details["price_uzs"] = 0
 
-	# Превращаем в float или int только в самом конце для JSON и БД
-	if isinstance(details["price_uzs"], Decimal):
-		details["price_uzs"] = int(details["price_uzs"])
+    # Превращаем в float или int только в самом конце для JSON и БД
+    if isinstance(details["price_uzs"], Decimal):
+        details["price_uzs"] = int(details["price_uzs"])
 
-	#--- Логика ЛОКАЦИИ ---
-	location_div = soup.find("div", class_="css-1deibjd")
-	details["precise_location"] = get_text_or_default(
-		location_div, "p", "css-9pna1a"
-	)
-	details["location"] = get_text_or_default(location_div, "p", "css-3cz5o2")
-	parameters_div = soup.find("div", class_="css-6zsv65")
-	parameters_list = []
-	if parameters_div:
-		parameters_containers = parameters_div.find_all(
-			"p", class_="css-13x8d99"
-		)
-		for parameter in parameters_containers:
-			parameter = parameter.get_text()
-			parameters_list.append(parameter)
-	details["parameters"] = parameters_list
-	olx_id = get_text_or_default(soup, "span", "css-ooacec")
-	details["olx_id"] = olx_id if olx_id and olx_id != "None" else None
-	details["url"] = normalize_listing_url(ad_url)
+    #--- Логика ЛОКАЦИИ ---
+    # Ищем контейнер локации
+    location_div = find_with_fallback(
+        soup,
+        [{"data-testid": "location-address"}, {"class_": "css-1deibjd"}],
+        default=soup,
+        selector_name="location_div"
+    )
+    
+    details["precise_location"] = get_text_fallback(
+        location_div,
+        PRODUCT_PAGE_SELECTORS["precise_location"],
+        default="None",
+        selector_name="precise_location"
+    )
+    details["location"] = get_text_fallback(
+        location_div,
+        PRODUCT_PAGE_SELECTORS["location"],
+        default="None",
+        selector_name="location"
+    )
+    
+    # Параметры товара
+    parameters_div = find_with_fallback(
+        soup,
+        PRODUCT_PAGE_SELECTORS["parameters"],
+        default=None,
+        selector_name="parameters"
+    )
+    parameters_list = []
+    if parameters_div:
+        parameters_containers = find_with_fallback(
+            parameters_div,
+            PRODUCT_PAGE_SELECTORS["parameter_item"],
+            default=[],
+            all=True,
+            selector_name="parameter_item"
+        )
+        for parameter in parameters_containers:
+            if hasattr(parameter, 'get_text'):
+                parameter = parameter.get_text()
+            parameters_list.append(parameter)
+    details["parameters"] = parameters_list
+    
+    # OLX ID
+    olx_id = get_text_fallback(
+        soup,
+        PRODUCT_PAGE_SELECTORS["olx_id"],
+        default="None",
+        selector_name="olx_id"
+    )
+    details["olx_id"] = olx_id if olx_id and olx_id != "None" else None
+    
+    # URL (нормализованный)
+    details["url"] = normalize_listing_url(ad_url)
 
-	return details
+    return details
 
 
 def parse_price_value(text: str) -> tuple[int | None, str]:
@@ -382,6 +505,29 @@ filters = (
 )
 
 results = []
+
+
+def validate_selectors_on_page(page_type: str, html_content: str) -> dict[str, bool]:
+    """
+    Проверяет, какие селекторы работают на данной странице.
+    
+    Args:
+        page_type: "category" или "product"
+        html_content: HTML содержимое страницы
+    
+    Returns:
+        Dict {selector_name: True/False}
+    """
+    from parser.selector_utils import validate_selectors
+    
+    soup = bs4.BeautifulSoup(html_content, "html.parser")
+    
+    if page_type == "category":
+        return validate_selectors(soup, CATEGORY_PAGE_SELECTORS)
+    elif page_type == "product":
+        return validate_selectors(soup, PRODUCT_PAGE_SELECTORS)
+    else:
+        raise ValueError(f"Неизвестный тип страницы: {page_type}")
 
 
 async def run_parsing():
