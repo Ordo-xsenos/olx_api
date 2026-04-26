@@ -107,6 +107,7 @@ PRODUCT_PAGE_SELECTORS = {
     # Общая локация (район/город)
     "location": [
         {"data-testid": "location-district"},
+        {"data-testid": "location-address"},
         {"class_": "css-3cz5o2"},
         {"tag": "p"},
     ],

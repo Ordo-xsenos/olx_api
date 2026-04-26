@@ -1,11 +1,11 @@
 import logging
-import os
 from datetime import datetime, timedelta
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from config import settings
 from db_handler.db.engine import SessionLocal
 from db_handler.db.models import OutboxStatus, WebhookOutbox
 from db_handler.services.webhook_client import send_webhook
@@ -21,7 +21,7 @@ async def process_outbox() -> None:
     Забирает pending-события из outbox и пытается их доставить.
     """
     try:
-        timeout_seconds = float(os.getenv("WEBHOOK_TIMEOUT_SECONDS", "10"))
+        timeout_seconds = settings.webhook_timeout_seconds
         async with SessionLocal() as session:
             stmt = (
                 select(WebhookOutbox)
@@ -46,7 +46,9 @@ async def process_outbox() -> None:
                     await deliver_event(session, client, event)
 
             await session.commit()
-    except Exception:
+    except Exception as e:
+        if isinstance(e, (KeyboardInterrupt, SystemExit)):
+            raise
         logger.exception("Outbox: необработанная ошибка в process_outbox")
 
 

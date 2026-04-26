@@ -1,11 +1,11 @@
 import asyncio
 import logging
-import os
 from typing import Any
 from urllib.parse import urljoin
 
 from aiogram import Bot
 
+from config import settings
 from db_handler.db.engine import SessionLocal
 from db_handler.main import (
     extract_products_links,
@@ -24,8 +24,13 @@ MAIN_URL = "https://www.olx.uz"
 logger = logging.getLogger(__name__)
 
 
-async def scrape_category_data(category_id: str) -> tuple[tuple[Any], int]:
+async def scrape_category_data(category_id: str, url_params: str = "") -> tuple[tuple[Any], int]:
     category_url = urljoin(MAIN_URL, category_id.lstrip("/"))
+    if url_params:
+        join_char = "&" if "?" in category_url else "?"
+        category_url = f"{category_url}{join_char}{url_params.lstrip('?&')}"
+    
+    logger.info(f"Запуск парсинга URL: {category_url}")
     usd_rate = await get_current_usd_rate()
     products = await parse_products_from_category(category_url)
     product_links = extract_products_links(products)
@@ -42,14 +47,24 @@ async def run_parsing(
     category_id: str,
     category_name: str,
     db=None,
+    url_params: str = "",
+    local_filters: Any = None,
 ) -> None:
     try:
-        scraped_data, total_links = await scrape_category_data(category_id)
+        scraped_data, total_links = await scrape_category_data(category_id, url_params)
         normalized_rows = []
         parsed_urls: list[str] = []
         for item in scraped_data:
             normalized = normalize_product(item)
             if normalized:
+                # Применяем локальные фильтры (Keyword, City)
+                if local_filters and not local_filters.match(normalized):
+                    logger.debug(
+                        "Товар пропущен фильтром: %s (Локация: %s)",
+                        normalized.get("title"),
+                        normalized.get("location")
+                    )
+                    continue
                 normalized_rows.append(normalized)
                 parsed_urls.append(normalized["url"])
 
@@ -62,12 +77,12 @@ async def run_parsing(
             return
 
         await save_parsed_data(normalized_rows)
-        if os.getenv("WEBHOOK_URL"):
+        if settings.webhook_url:
             async with SessionLocal() as session:
                 serialized_rows = serialize_for_webhook(normalized_rows)
-                await enqueue_webhook(session, os.getenv("WEBHOOK_URL"), serialized_rows)
+                await enqueue_webhook(session, settings.webhook_url, serialized_rows)
 
-        cleanup_enabled = os.getenv("CLEANUP_MISSING", "0") == "1"
+        cleanup_enabled = settings.cleanup_missing == "1"
         if cleanup_enabled and db is not None:
             ratio = (len(parsed_urls) / total_links) if total_links else 0.0
             if ratio >= 0.9:

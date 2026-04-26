@@ -1,15 +1,17 @@
 import asyncio
 import logging
-import os
 import time
 
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
-from dotenv import load_dotenv
 
-from db_handler.db_class import PostgresHandler
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from sqlalchemy.ext.asyncio import AsyncSession
+from config import settings
 from db_handler.db.engine import SessionLocal
+from db_handler.main import Filters
 from db_handler.services.outbox_service import enqueue_webhook
 from db_handler.services.webhook_serializer import serialize_for_webhook
 from db_handler.services.repository import (
@@ -20,11 +22,9 @@ from db_handler.services.repository import (
     list_products_for_export,
     list_users,
     mark_admin_by_username,
-    mark_admin_by_tg_id,
     promote_admin_if_username,
     delete_user_by_username,
     delete_user_by_tg_id,
-    set_ban_by_username,
     set_ban_with_reason,
     set_allow_non_admins,
     upsert_user,
@@ -35,12 +35,19 @@ from keyboards.user_keyboards import (
     PARSING_CATEGORIES,
     get_parsing_categories_keyboard,
     get_report_categories_keyboard,
+    get_configurator_keyboard,
 )
 from parser.main_parser import run_parsing
 
-load_dotenv()
-
 start_router = Router()
+
+class ParseConfigurator(StatesGroup):
+    configuring = State()
+    waiting_for_min_price = State()
+    waiting_for_max_price = State()
+    waiting_for_city = State()
+    waiting_for_keyword = State()
+    waiting_for_custom_url = State()
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -60,16 +67,16 @@ def _extract_username(text: str) -> str | None:
     return username or None
 
 
-async def _ensure_user(db: PostgresHandler, user) -> bool:
+async def _ensure_user(session: AsyncSession, user) -> bool:
     username = user.username or None
-    record = await upsert_user(db, user.id, username)
+    record = await upsert_user(session, user.id, username)
     if record and not record.get("is_admin"):
-        promoted = await promote_admin_if_username(db, user.id, username)
+        promoted = await promote_admin_if_username(session, user.id, username)
         if promoted:
             record["is_admin"] = True
     if record and record.get("is_banned"):
         return False
-    allow_non_admins = await _get_allow_non_admins_cached(db)
+    allow_non_admins = await _get_allow_non_admins_cached(session)
     if not allow_non_admins and not (record and record.get("is_admin")):
         return False
     return True
@@ -78,17 +85,17 @@ async def _ensure_user(db: PostgresHandler, user) -> bool:
 _allow_cache = {"value": None, "ts": 0.0}
 
 
-async def _get_allow_non_admins_cached(db: PostgresHandler) -> bool:
+async def _get_allow_non_admins_cached(session: AsyncSession) -> bool:
     now = time.time()
     if _allow_cache["value"] is None or now - _allow_cache["ts"] > 30:
-        _allow_cache["value"] = await get_allow_non_admins(db)
+        _allow_cache["value"] = await get_allow_non_admins(session)
         _allow_cache["ts"] = now
     return bool(_allow_cache["value"])
 
 
 @start_router.message(Command("start"))
-async def start_command_handler(message: Message, db: PostgresHandler) -> None:
-    if not await _ensure_user(db, message.from_user):
+async def start_command_handler(message: Message, session: AsyncSession) -> None:
+    if not await _ensure_user(session, message.from_user):
         await message.answer("Доступ к боту ограничен.")
         return
     await message.answer(
@@ -100,8 +107,8 @@ async def start_command_handler(message: Message, db: PostgresHandler) -> None:
 
 
 @start_router.message(Command("parse"))
-async def parse_command_handler(message: Message, db: PostgresHandler) -> None:
-    if not await _ensure_user(db, message.from_user):
+async def parse_command_handler(message: Message, session: AsyncSession) -> None:
+    if not await _ensure_user(session, message.from_user):
         await message.answer("Доступ к боту ограничен.")
         return
     await message.answer(
@@ -111,8 +118,8 @@ async def parse_command_handler(message: Message, db: PostgresHandler) -> None:
 
 
 @start_router.message(Command("report"))
-async def report_command_handler(message: Message, db: PostgresHandler) -> None:
-    if not await _ensure_user(db, message.from_user):
+async def report_command_handler(message: Message, session: AsyncSession) -> None:
+    if not await _ensure_user(session, message.from_user):
         await message.answer("Доступ к боту ограничен.")
         return
     await message.answer(
@@ -122,15 +129,15 @@ async def report_command_handler(message: Message, db: PostgresHandler) -> None:
 
 
 @start_router.message(Command("latest"))
-async def latest_command_handler(message: Message, db: PostgresHandler) -> None:
-    if not await _ensure_user(db, message.from_user):
+async def latest_command_handler(message: Message, session: AsyncSession) -> None:
+    if not await _ensure_user(session, message.from_user):
         await message.answer("Доступ к боту ограничен.")
         return
     parts = message.text.split()
     limit = 10
     if len(parts) > 1 and parts[1].isdigit():
         limit = int(parts[1])
-    rows = await list_latest_products(db, limit=limit)
+    rows = await list_latest_products(session, limit=limit)
     if not rows:
         await message.answer("Пока нет сохраненных объявлений.")
         return
@@ -144,15 +151,15 @@ async def latest_command_handler(message: Message, db: PostgresHandler) -> None:
     await message.answer("\n\n".join(lines))
 
     # Отправка вебхука
-    if os.getenv("WEBHOOK_URL"):
-        async with SessionLocal() as session:
+    if settings.webhook_url:
+        async with SessionLocal() as webhook_session:
             serialized_rows = serialize_for_webhook(rows)
-            await enqueue_webhook(session, os.getenv("WEBHOOK_URL"), serialized_rows)
+            await enqueue_webhook(webhook_session, settings.webhook_url, serialized_rows)
 
 
 @start_router.message(Command("filters"))
-async def filters_command_handler(message: Message, db: PostgresHandler) -> None:
-    if not await _ensure_user(db, message.from_user):
+async def filters_command_handler(message: Message, session: AsyncSession) -> None:
+    if not await _ensure_user(session, message.from_user):
         await message.answer("Доступ к боту ограничен.")
         return
     await message.answer(
@@ -164,9 +171,9 @@ async def filters_command_handler(message: Message, db: PostgresHandler) -> None
 
 @start_router.callback_query(F.data.startswith("parse_category:"))
 async def process_category_callback(
-    callback: CallbackQuery, db: PostgresHandler
+    callback: CallbackQuery, session: AsyncSession, state: FSMContext
 ) -> None:
-    if not await _ensure_user(db, callback.from_user):
+    if not await _ensure_user(session, callback.from_user):
         await callback.message.answer("Доступ к боту ограничен.")
         await callback.answer()
         return
@@ -176,33 +183,155 @@ async def process_category_callback(
         category_id,
     )
 
-    await callback.message.answer(
-        f"✅ Принято! Начинаю парсинг категории «{category_name}».\n"
-        "Это может занять несколько минут. Я пришлю сообщение, когда закончу."
+    await state.clear()
+    await state.update_data(
+        category_id=category_id,
+        category_name=category_name,
+        min_price=None,
+        max_price=None,
+        city=None,
+        keyword=None,
+        custom_url=None,
+    )
+    await state.set_state(ParseConfigurator.configuring)
+
+    await callback.message.edit_text(
+        f"⚙️ Настройка парсинга для категории: <b>{category_name}</b>\n\n"
+        "Вы можете настроить фильтры или сразу запустить парсинг.\n"
+        "<i>Фильтры цены и Custom URL передаются напрямую в OLX.\n"
+        "Город и ключевое слово фильтруются локально.</i>",
+        reply_markup=get_configurator_keyboard({}),
     )
     await callback.answer()
 
-    asyncio.create_task(
-        run_parsing(
-            bot=callback.bot,
-            chat_id=callback.from_user.id,
-            category_id=category_id,
-            category_name=category_name,
-            db=db,
+
+@start_router.callback_query(ParseConfigurator.configuring, F.data.startswith("config:"))
+async def process_config_callback(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession
+) -> None:
+    action = callback.data.split(":", 1)[1]
+
+    if action == "cancel":
+        await state.clear()
+        await callback.message.edit_text("❌ Парсинг отменен.")
+        await callback.answer()
+        return
+
+    if action == "start":
+        data = await state.get_data()
+        await callback.message.edit_text(
+            f"🚀 Начинаю парсинг категории «<b>{data['category_name']}</b>» с учетом фильтров.\n"
+            "Это может занять несколько минут. Я пришлю уведомление по завершении."
         )
+        await callback.answer()
+
+        # Сбор параметров для URL
+        url_params_list = []
+        if data.get("min_price"):
+            url_params_list.append(f"search[filter_float_price:from]={data['min_price']}")
+        if data.get("max_price"):
+            url_params_list.append(f"search[filter_float_price:to]={data['max_price']}")
+        if data.get("custom_url"):
+            url_params_list.append(data["custom_url"].lstrip("?&"))
+
+        url_params = "&".join(url_params_list)
+
+        # Сбор локальных фильтров
+        local_filters = Filters()
+        has_local = False
+        if data.get("city"):
+            local_filters.city(data["city"])
+            has_local = True
+        if data.get("keyword"):
+            local_filters.keyword(data["keyword"])
+            has_local = True
+
+        asyncio.create_task(
+            run_parsing(
+                bot=callback.bot,
+                chat_id=callback.from_user.id,
+                category_id=data["category_id"],
+                category_name=data["category_name"],
+                db=None,
+                url_params=url_params,
+                local_filters=local_filters if has_local else None,
+            )
+        )
+        await state.clear()
+        return
+
+    # Переход в состояния ожидания ввода
+    state_map = {
+        "set_min_price": ParseConfigurator.waiting_for_min_price,
+        "set_max_price": ParseConfigurator.waiting_for_max_price,
+        "set_city": ParseConfigurator.waiting_for_city,
+        "set_keyword": ParseConfigurator.waiting_for_keyword,
+        "set_custom_url": ParseConfigurator.waiting_for_custom_url,
+    }
+
+    prompt_map = {
+        "set_min_price": "💰 Введите <b>минимальную цену</b> (только цифры) или 0 чтобы сбросить:",
+        "set_max_price": "💰 Введите <b>максимальную цену</b> (только цифры) или 0 чтобы сбросить:",
+        "set_city": "🏙 Введите <b>город</b> для локальной фильтрации (например: Ташкент):",
+        "set_keyword": "📝 Введите <b>ключевое слово</b> для поиска в заголовке:",
+        "set_custom_url": "🔗 Введите <b>параметры URL</b> (например: search[order]=created_at:desc):",
+    }
+
+    if action in state_map:
+        await state.set_state(state_map[action])
+        await callback.message.answer(prompt_map[action])
+        await callback.answer()
+
+
+@start_router.message(ParseConfigurator.waiting_for_min_price)
+@start_router.message(ParseConfigurator.waiting_for_max_price)
+@start_router.message(ParseConfigurator.waiting_for_city)
+@start_router.message(ParseConfigurator.waiting_for_keyword)
+@start_router.message(ParseConfigurator.waiting_for_custom_url)
+async def process_config_input(message: Message, state: FSMContext) -> None:
+    current_state = await state.get_state()
+    text = message.text.strip() if message.text else ""
+
+    if text.lower() in ["пропустить", "skip", "нет"]:
+        text = None
+    elif text == "0":
+        text = None
+
+    if current_state == ParseConfigurator.waiting_for_min_price.state:
+        if text and not text.isdigit():
+            await message.answer("⚠️ Пожалуйста, введите только цифры.")
+            return
+        await state.update_data(min_price=text)
+    elif current_state == ParseConfigurator.waiting_for_max_price.state:
+        if text and not text.isdigit():
+            await message.answer("⚠️ Пожалуйста, введите только цифры.")
+            return
+        await state.update_data(max_price=text)
+    elif current_state == ParseConfigurator.waiting_for_city.state:
+        await state.update_data(city=text)
+    elif current_state == ParseConfigurator.waiting_for_keyword.state:
+        await state.update_data(keyword=text)
+    elif current_state == ParseConfigurator.waiting_for_custom_url.state:
+        await state.update_data(custom_url=text)
+
+    await state.set_state(ParseConfigurator.configuring)
+    data = await state.get_data()
+    await message.answer(
+        f"⚙️ Настройка для: <b>{data['category_name']}</b>",
+        reply_markup=get_configurator_keyboard(data)
     )
 
 
 @start_router.callback_query(F.data.startswith("report_category:"))
 async def process_report_callback(
-    callback: CallbackQuery, db: PostgresHandler
+    callback: CallbackQuery, session: AsyncSession
 ) -> None:
-    if not await _ensure_user(db, callback.from_user):
+    if not await _ensure_user(session, callback.from_user):
         await callback.message.answer("Доступ к боту ограничен.")
         await callback.answer()
         return
     category_id = callback.data.split(":", 1)[1]
-    rows = await list_products_for_export(db, category=category_id)
+    rows = await list_products_for_export(session, category=category_id)
     if not rows:
         await callback.message.answer("По выбранной категории нет данных.")
         await callback.answer()
@@ -220,40 +349,40 @@ async def process_report_callback(
 
 
 @start_router.message(IsAdmin(), Command("add_admin"))
-async def add_admin_command(message: Message, db: PostgresHandler) -> None:
+async def add_admin_command(message: Message, session: AsyncSession) -> None:
     username = _extract_username(message.text)
     if not username:
         await message.answer("Укажи ник: /add_admin @username")
         return
-    await mark_admin_by_username(db, username)
+    await mark_admin_by_username(session, username)
     await message.answer(f"Админ добавлен: @{username}")
 
 
 @start_router.message(IsAdmin(), Command("ban"))
-async def ban_command(message: Message, db: PostgresHandler) -> None:
+async def ban_command(message: Message, session: AsyncSession) -> None:
     parts = message.text.split(maxsplit=2)
     if len(parts) < 2:
         await message.answer("Укажи ник: /ban @username [причина]")
         return
     username = parts[1].strip().lstrip("@")
     reason = parts[2].strip() if len(parts) == 3 else "manual"
-    await set_ban_with_reason(db, username, True, reason)
+    await set_ban_with_reason(session, username, True, reason)
     await message.answer(f"Пользователь заблокирован: @{username}")
 
 
 @start_router.message(IsAdmin(), Command("unban"))
-async def unban_command(message: Message, db: PostgresHandler) -> None:
+async def unban_command(message: Message, session: AsyncSession) -> None:
     username = _extract_username(message.text)
     if not username:
         await message.answer("Укажи ник: /unban @username")
         return
-    await set_ban_with_reason(db, username, False, None)
+    await set_ban_with_reason(session, username, False, None)
     await message.answer(f"Пользователь разблокирован: @{username}")
 
 
 @start_router.message(IsAdmin(), Command("stats"))
-async def stats_command(message: Message, db: PostgresHandler) -> None:
-    stats = await get_stats(db)
+async def stats_command(message: Message, session: AsyncSession) -> None:
+    stats = await get_stats(session)
     await message.answer(
         "Статистика:\n"
         f"• Объявлений: {stats.get('products')}\n"
@@ -264,8 +393,8 @@ async def stats_command(message: Message, db: PostgresHandler) -> None:
 
 
 @start_router.message(IsAdmin(), Command("users"))
-async def users_command(message: Message, db: PostgresHandler) -> None:
-    rows = await list_users(db)
+async def users_command(message: Message, session: AsyncSession) -> None:
+    rows = await list_users(session)
     if not rows:
         await message.answer("Список пользователей пуст.")
         return
@@ -284,32 +413,32 @@ async def users_command(message: Message, db: PostgresHandler) -> None:
 
 
 @start_router.message(IsAdmin(), Command("del_user"))
-async def del_user_command(message: Message, db: PostgresHandler) -> None:
+async def del_user_command(message: Message, session: AsyncSession) -> None:
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
         await message.answer("Укажи ник: /del_user @username")
         return
     username = parts[1].strip()
-    deleted = await delete_user_by_username(db, username)
+    deleted = await delete_user_by_username(session, username)
     await message.answer(f"Удалено записей: {deleted}")
 
 
 @start_router.message(IsAdmin(), Command("del_user_id"))
-async def del_user_id_command(message: Message, db: PostgresHandler) -> None:
+async def del_user_id_command(message: Message, session: AsyncSession) -> None:
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2 or not parts[1].isdigit():
         await message.answer("Укажи tg_id: /del_user_id 123456789")
         return
-    deleted = await delete_user_by_tg_id(db, int(parts[1]))
+    deleted = await delete_user_by_tg_id(session, int(parts[1]))
     await message.answer(f"Удалено записей: {deleted}")
 
 
 @start_router.message(Command("whoami"))
-async def whoami_command(message: Message, db: PostgresHandler) -> None:
-    record = await upsert_user(db, message.from_user.id, message.from_user.username)
+async def whoami_command(message: Message, session: AsyncSession) -> None:
+    record = await upsert_user(session, message.from_user.id, message.from_user.username)
     if not record:
-        record = await get_user_by_tg_id(db, message.from_user.id)
-    allow_non_admins = await _get_allow_non_admins_cached(db)
+        record = await get_user_by_tg_id(session, message.from_user.id)
+    allow_non_admins = await _get_allow_non_admins_cached(session)
     if not record:
         await message.answer("Пользователь не найден в БД.")
         return
@@ -324,12 +453,12 @@ async def whoami_command(message: Message, db: PostgresHandler) -> None:
 
 
 @start_router.message(IsAdmin(), Command("allow_all"))
-async def allow_all_command(message: Message, db: PostgresHandler) -> None:
-    await set_allow_non_admins(db, True)
+async def allow_all_command(message: Message, session: AsyncSession) -> None:
+    await set_allow_non_admins(session, True)
     await message.answer("Доступ для неадминов разрешен.")
 
 
 @start_router.message(IsAdmin(), Command("deny_all"))
-async def deny_all_command(message: Message, db: PostgresHandler) -> None:
-    await set_allow_non_admins(db, False)
+async def deny_all_command(message: Message, session: AsyncSession) -> None:
+    await set_allow_non_admins(session, False)
     await message.answer("Доступ для неадминов запрещен.")

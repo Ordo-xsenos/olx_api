@@ -5,7 +5,7 @@ import enum
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    String, Integer, DateTime, JSON, Enum, Float, func, Text, Column
+    String, Integer, DateTime, JSON, Enum, Float, func, Text, Column, Boolean
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -62,3 +62,24 @@ class WebhookOutbox(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tg_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    username: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_banned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    ban_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class Settings(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)

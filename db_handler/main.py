@@ -9,6 +9,8 @@ from decimal import Decimal, InvalidOperation
 
 from bs4 import BeautifulSoup
 
+from config import settings
+from db_handler.http_client import get_http_client
 from parser.selectors import CATEGORY_PAGE_SELECTORS, PRODUCT_PAGE_SELECTORS
 from parser.selector_utils import find_with_fallback, get_text_or_default as get_text_fallback
 
@@ -22,15 +24,8 @@ logger = logging.getLogger(__name__)
 
 main_url = "https://www.olx.uz"
 # Ограничиваем количество одновременных запросов (чтобы не забанили)
-MAX_CONCURRENT_REQUESTS = 5
+MAX_CONCURRENT_REQUESTS = settings.max_concurrent_requests
 semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
-
-# Асинхронный клиент с настройками тайм-аута и заголовков
-ASYNC_CLIENT = httpx.AsyncClient(
-	timeout=10.0,
-	headers={"User-Agent": "Mozilla/5.0 (compatible; olx-scraper/2.0)"},
-	follow_redirects=True
-)
 
 
 def normalize_listing_url(raw_url: str) -> str:
@@ -44,14 +39,19 @@ async def fetch(url: str) -> str | None:
 	"""Асинхронное скачивание страницы с ограничением через семафор."""
 	async with semaphore:
 		try:
-			resp = await ASYNC_CLIENT.get(url)
+			client = get_http_client()
+			resp = await client.get(url)
 			resp.raise_for_status()
 			# Короткая пауза между запросами внутри семафора
 			await asyncio.sleep(0.1)
 			return resp.text
+		except httpx.HTTPError as e:
+			logger.error("Ошибка HTTP запроса %s: %s", url, e)
+			return None
 		except Exception as e:
-			logger.error("Ошибка асинхронного запроса %s: %s %r", url, type(e).__name__, e)
-			logger.error("Ошибка асинхронного запроса %s: %s", url, e)
+			if isinstance(e, (KeyboardInterrupt, SystemExit)):
+				raise
+			logger.error("Неожиданная ошибка при запросе %s: %s", url, e, exc_info=True)
 			return None
 
 
@@ -178,7 +178,10 @@ async def parse_products_from_category(category_url: str) -> list[bs4.element.Ta
         logger.info("Сбор товаров: страница %s из %s", page_num, total_pages)
 
         if page_num > 1:
-            current_url = f"{category_url.rstrip('/')}/?page={page_num}"
+            if "?" in category_url:
+                current_url = f"{category_url}&page={page_num}"
+            else:
+                current_url = f"{category_url.rstrip('/')}/?page={page_num}"
             page_text = await fetch(current_url)
             if not page_text:
                 continue
@@ -468,13 +471,20 @@ class Filters:
 
 	def price_below(self, max_price_uzs):
 		def _f(item):
-			value = item["original_price"]
-			currency = item["currency"]
+			# Поддерживаем и сырые, и нормализованные данные
+			value = item.get("price") or item.get("original_price")
+			currency = item.get("currency")
 			if value is None:
 				return False
 
-			if currency == "UZS":
-				value /= 12500  # примерный курс
+			# Если это нормализованная цена в сумах
+			if "price_uzs" in item and item["price_uzs"] is not None:
+				return item["price_uzs"] <= max_price_uzs * 12800 # условно в сумы если max_price в у.е.
+				# Или если max_price_uzs уже в сумах:
+				# return item["price_uzs"] <= max_price_uzs
+
+			if currency == "USD":
+				value *= 12800  # примерный курс
 
 			return value <= max_price_uzs
 
@@ -482,15 +492,30 @@ class Filters:
 		return self
 
 	def city(self, city):
-		self.rules.append(lambda item: city in item["location"])
+		def _f(item):
+			location = item.get("location")
+			if not location or not isinstance(location, str):
+				return False
+			return city.lower() in location.lower()
+		self.rules.append(_f)
 		return self
 
 	def keyword(self, word):
-		self.rules.append(lambda item: word.lower() in item["title"].lower())
+		def _f(item):
+			title = item.get("title")
+			if not title or not isinstance(title, str):
+				return False
+			return word.lower() in title.lower()
+		self.rules.append(_f)
 		return self
 
 	def date(self, text):
-		self.rules.append(lambda item: text in item["date"])
+		def _f(item):
+			date_val = item.get("date")
+			if not date_val or not isinstance(date_val, str):
+				return False
+			return text.lower() in date_val.lower()
+		self.rules.append(_f)
 		return self
 
 	def match(self, item):
@@ -535,7 +560,7 @@ async def run_parsing():
 	url_dict = {urlparse(url).path: url for url in categories}
 	user_input = input("Введите путь категории для парсинга (например, /nedvizhimost/): ").strip()
 	if user_input not in url_dict:
-		print("Неверный путь категории.")
+		logger.warning("Неверный путь категории: %s", user_input)
 		return
 	target_category = url_dict[user_input]
 	logger.info("Начинаем сбор товаров...")
@@ -555,7 +580,7 @@ async def run_parsing():
 
 	for data in all_details:
 		if data and filters.match(data):
-			print(data)
+			logger.info("Найден товар: %s", data.get("title"))
 
 # Запуск программы
 if __name__ == "__main__":
@@ -566,4 +591,4 @@ if __name__ == "__main__":
 	finally:
 		# Закрытие клиента отключено:
 		# при завершении возникает RuntimeError "Event loop is closed".
-		print("Парсинг завершен")
+		logger.info("Парсинг завершен")

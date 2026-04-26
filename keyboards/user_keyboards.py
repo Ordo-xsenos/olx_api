@@ -1,6 +1,4 @@
 from aiogram.types import (
-    ReplyKeyboardMarkup,
-    KeyboardButton,
     InlineKeyboardMarkup,
     InlineKeyboardButton,
 )
@@ -31,14 +29,9 @@ def get_parsing_categories_keyboard() -> InlineKeyboardMarkup:
         builder.add(
             InlineKeyboardButton(
                 text=text,
-                # Формируем callback_data,
-                # чтобы потом его можно было легко разобрать
-                # Префикс 'parse_category:'
-                # поможет отличить эти колбэки от других
                 callback_data=f"parse_category:{callback_data}",
             )
         )
-    # Выставляем количество кнопок в ряду. Например, 2.
     builder.adjust(2)
     return builder.as_markup()
 
@@ -60,3 +53,26 @@ def get_report_categories_keyboard():
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     return keyboard
+
+
+def get_configurator_keyboard(config_data: dict) -> InlineKeyboardMarkup:
+    """
+    Создает клавиатуру для конфигурации фильтров перед парсингом.
+    """
+    min_p = config_data.get("min_price") or "Не задано"
+    max_p = config_data.get("max_price") or "Не задано"
+    city = config_data.get("city") or "Не задано"
+    keyword = config_data.get("keyword") or "Не задано"
+    custom_url = config_data.get("custom_url")
+    custom_url_display = (custom_url[:15] + "...") if custom_url and len(custom_url) > 15 else (custom_url or "Не задано")
+
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=f"💰 Мин. Цена: {min_p}", callback_data="config:set_min_price"))
+    builder.row(InlineKeyboardButton(text=f"💰 Макс. Цена: {max_p}", callback_data="config:set_max_price"))
+    builder.row(InlineKeyboardButton(text=f"🏙 Город: {city}", callback_data="config:set_city"))
+    builder.row(InlineKeyboardButton(text=f"📝 Ключ. слово: {keyword}", callback_data="config:set_keyword"))
+    builder.row(InlineKeyboardButton(text=f"🔗 Custom URL: {custom_url_display}", callback_data="config:set_custom_url"))
+    builder.row(InlineKeyboardButton(text="▶️ Запустить парсинг", callback_data="config:start"))
+    builder.row(InlineKeyboardButton(text="❌ Отмена", callback_data="config:cancel"))
+
+    return builder.as_markup()
