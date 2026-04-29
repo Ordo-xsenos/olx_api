@@ -5,7 +5,7 @@ import enum
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    String, Integer, DateTime, JSON, Enum, Float, func, Text, Column, Boolean
+    String, Integer, BigInteger, DateTime, JSON, Enum, Float, func, Text, Column, Boolean
 )
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -68,7 +68,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    tg_id: Mapped[int | None] = mapped_column(Integer, unique=True, nullable=True)
+    tg_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, nullable=True)
     username: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

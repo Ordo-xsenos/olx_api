@@ -1,38 +1,41 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Optional
+from pydantic import Field
 
 
 class Settings(BaseSettings):
     """Настройки приложения с валидацией."""
 
     # База данных
-    database_url: str
+    database_url: str = Field(alias="DATABASE_URL")
 
     # Telegram
-    telegram_bot_token: str
-    admins: str = ""
-    telegram_chat_id: Optional[str] = None
+    telegram_bot_token: str = Field(alias="TOKEN")
+    admins: str = Field(default="", alias="ADMINS")
+    telegram_chat_id: Optional[str] = Field(default=None, alias="TELEGRAM_CHAT_ID")
 
     # Парсинг
-    schedule_category_id: Optional[str] = None
-    schedule_category_name: Optional[str] = None
-    parse_schedule_time: Optional[str] = None
-    cleanup_missing: str = "0"
-    max_concurrent_requests: int = 5
-    batch_size: int = 200
+    schedule_category_id: Optional[str] = Field(default=None, alias="SCHEDULE_CATEGORY_ID")
+    schedule_category_name: Optional[str] = Field(default=None, alias="SCHEDULE_CATEGORY_NAME")
+    parse_schedule_time: Optional[str] = Field(default=None, alias="PARSE_SCHEDULE_TIME")
+    cleanup_missing: str = Field(default="0", alias="CLEANUP_MISSING")
+    max_concurrent_requests: int = Field(default=5, alias="MAX_CONCURRENT_REQUESTS")
+    batch_size: int = Field(default=200, alias="BATCH_SIZE")
 
     # Webhook
-    webhook_url: Optional[str] = None
-    webhook_timeout_seconds: float = 10.0
+    webhook_url: Optional[str] = Field(default=None, alias="WEBHOOK_URL")
+    webhook_timeout_seconds: float = Field(default=10.0, alias="WEBHOOK_TIMEOUT_SECONDS")
 
     # Retry настройки
-    db_max_retries: int = 3
-    db_retry_delay: float = 0.5
+    db_max_retries: int = Field(default=3, alias="DB_MAX_RETRIES")
+    db_retry_delay: float = Field(default=0.5, alias="DB_RETRY_DELAY")
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        populate_by_name=True,  # Позволяет использовать как alias, так и имя поля
+        extra="ignore",  # Игнорировать дополнительные поля из .env
     )
 
 

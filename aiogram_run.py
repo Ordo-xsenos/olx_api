@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 async def init_db():
-    """Инициализация БД - создание таблиц если их нет."""
+    """Инициализация БД - создание, таблиц если их нет."""
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
