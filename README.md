@@ -1,72 +1,72 @@
 # OLX API Parser Bot
 
-Telegram-бот для парсинга объявлений с OLX.uz, сохранения их в базу данных и отправки отчётов.
+A Telegram bot for parsing product listings from OLX.uz, storing them in a database, and generating reports.
 
-## Содержание
+## Table of Contents
 
-- [Возможности](#возможности)
-- [Установка](#установка)
-- [Конфигурация](#конфигурация)
-- [Использование](#использование)
-- [Команды бота](#команды-бота)
-- [Архитектура](#архитектура)
-- [Парсинг](#парсинг)
-- [Вебхуки](#вебхуки)
-- [Тестирование](#тестирование)
-- [Утилиты](#утилиты)
-- [Структура проекта](#структура-проекта)
-- [Миграции](#миграции)
-
----
-
-## Возможности
-
-- ✅ Парсинг категорий OLX.uz (товары, цены, локация, параметры)
-- ✅ Сохранение данных в PostgreSQL через SQLAlchemy ORM (асинхронно)
-- ✅ Отчёт в формате Excel
-- ✅ Отправка данных через вебхуки (outbox pattern)
-- ✅ Планировщик задач (APScheduler)
-- ✅ Устойчивые селекторы с fallback (защита от изменений вёрстки)
-- ✅ Админ-панель для управления пользователями
-- ✅ Валидация конфигурации через pydantic-settings
-- ✅ Управление HTTP клиентом с корректным закрытием ресурсов
+- [Features](#features)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Bot Commands](#bot-commands)
+- [Architecture](#architecture)
+- [Parsing](#parsing)
+- [Webhooks](#webhooks)
+- [Testing](#testing)
+- [Utilities](#utilities)
+- [Project Structure](#project-structure)
+- [Migrations](#migrations)
 
 ---
 
-## Установка
+## Features
 
-### Требования
+- ✅ Parse OLX.uz categories (products, prices, location, parameters)
+- ✅ Store data in PostgreSQL via SQLAlchemy ORM (async)
+- ✅ Generate Excel reports
+- ✅ Send data via webhooks (outbox pattern)
+- ✅ Task scheduler (APScheduler)
+- ✅ Resilient selectors with fallback (protection against layout changes)
+- ✅ Admin panel for user management
+- ✅ Configuration validation via pydantic-settings
+- ✅ HTTP client management with proper resource cleanup
+
+---
+
+## Installation
+
+### Requirements
 
 - Python 3.11+
 - PostgreSQL 14+
 
-### Шаг 1: Клонирование
+### Step 1: Clone
 
 ```bash
 git clone <repository-url>
 cd olx_api
 ```
 
-### Шаг 2: Виртуальное окружение
+### Step 2: Virtual Environment
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate  # Linux/Mac
-# или
+# or
 .venv\Scripts\activate  # Windows
 ```
 
-### Шаг 3: Установка зависимостей
+### Step 3: Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Шаг 4: Настройка базы данных
+### Step 4: Database Setup
 
-Создайте базу данных PostgreSQL и обновите `.env` файл (см. раздел [Конфигурация](#конфигурация)).
+Create a PostgreSQL database and update the `.env` file (see [Configuration](#configuration) section).
 
-### Шаг 5: Миграции
+### Step 5: Migrations
 
 ```bash
 alembic upgrade head
@@ -74,57 +74,57 @@ alembic upgrade head
 
 ---
 
-## Конфигурация
+## Configuration
 
-Создайте файл `.env` в корне проекта:
+Create a `.env` file in the project root:
 
 ```env
-# База данных (обязательно)
+# Database (required)
 DATABASE_URL=postgresql+asyncpg://user:password@host:5432/dbname
 
-# Telegram бот (обязательно)
+# Telegram bot (required)
 TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
 
-# Админы (через запятую, @username или tg_id)
+# Admins (comma-separated, @username or tg_id)
 ADMINS=@username1,@username2,123456789
 
-# Вебхуки (опционально)
+# Webhooks (optional)
 WEBHOOK_URL=https://your-webhook-url.com/endpoint
 WEBHOOK_TIMEOUT_SECONDS=10
 
-# Планировщик (опционально)
+# Scheduler (optional)
 SCHEDULE_CATEGORY_ID=/nedvizhimost/
-SCHEDULE_CATEGORY_NAME=Недвижимость
+SCHEDULE_CATEGORY_NAME=Real Estate
 PARSE_SCHEDULE_TIME=09:00
 TELEGRAM_CHAT_ID=123456789
 
-# Парсинг (опционально)
+# Parsing (optional)
 MAX_CONCURRENT_REQUESTS=5
 BATCH_SIZE=200
 
-# Очистка устаревших записей (0/1)
+# Cleanup old records (0/1)
 CLEANUP_MISSING=1
 ```
 
-**Примечание:** Все обязательные поля валидируются при запуске через pydantic-settings. Если какое-то обязательное поле отсутствует, бот не запустится с понятной ошибкой.
+**Note:** All required fields are validated on startup via pydantic-settings. If any required field is missing, the bot will not start and will show a clear error message.
 
 ---
 
-## Использование
+## Usage
 
-### Запуск бота
+### Run the bot
 
 ```bash
 python aiogram_run.py
 ```
 
-### Запуск парсера вручную
+### Run the parser manually
 
 ```bash
 python db_handler/main.py
 ```
 
-### Запуск тестов
+### Run tests
 
 ```bash
 pytest
@@ -132,394 +132,394 @@ pytest
 
 ---
 
-## Команды бота
+## Bot Commands
 
-### Пользовательские команды
+### User Commands
 
-| Команда | Описание |
-|---------|----------|
-| `/start` | Приветствие и инструкции |
-| `/parse` | Запустить парсинг категории |
-| `/report` | Получить отчёт в Excel |
-| `/latest [N]` | Последние N объявлений (по умолчанию 10) |
-| `/filters` | Информация о фильтрах |
+| Command | Description |
+|---------|-------------|
+| `/start` | Welcome message and instructions |
+| `/parse` | Start parsing a category |
+| `/report` | Get an Excel report |
+| `/latest [N]` | Get last N listings (default 10) |
+| `/filters` | Information about filters |
 
-### Админские команды
+### Admin Commands
 
-| Команда | Описание |
-|---------|----------|
-| `/add_admin @username` | Добавить админа |
-| `/ban @username [причина]` | Забанить пользователя |
-| `/unban @username` | Разбанить пользователя |
-| `/stats` | Статистика бота |
-| `/users` | Список пользователей |
-| `/del_user @username` | Удалить пользователя |
-| `/del_user_id <tg_id>` | Удалить по ID |
-| `/allow_all` | Разрешить доступ всем |
-| `/deny_all` | Запретить доступ всем |
-| `/whoami` | Информация о текущем пользователе |
+| Command | Description |
+|---------|-------------|
+| `/add_admin @username` | Add an admin |
+| `/ban @username [reason]` | Ban a user |
+| `/unban @username` | Unban a user |
+| `/stats` | Bot statistics |
+| `/users` | List users |
+| `/del_user @username` | Delete user |
+| `/del_user_id <tg_id>` | Delete by ID |
+| `/allow_all` | Allow access for everyone |
+| `/deny_all` | Deny access for everyone |
+| `/whoami` | Current user information |
 
 ---
 
-## Архитектура
+## Architecture
 
-### Технологический стек
+### Technology Stack
 
-- **Aiogram 3.x** — асинхронный фреймворк для Telegram ботов
-- **SQLAlchemy 2.x** — ORM для работы с PostgreSQL
-- **Alembic** — миграции базы данных
-- **APScheduler** — планировщик задач
-- **httpx** — асинхронный HTTP клиент
-- **pydantic-settings** — валидация конфигурации
-- **BeautifulSoup4** — парсинг HTML
+- **Aiogram 3.x** — async framework for Telegram bots
+- **SQLAlchemy 2.x** — ORM for PostgreSQL
+- **Alembic** — database migrations
+- **APScheduler** — task scheduler
+- **httpx** — async HTTP client
+- **pydantic-settings** — configuration validation
+- **BeautifulSoup4** — HTML parsing
 
-### Структура директорий
+### Directory Structure
 
 ```
 olx_api/
-├── config.py               # Централизованная конфигурация (pydantic-settings)
-├── aiogram_run.py          # Точка входа бота
-├── create_bot.py           # Создание бота и диспетчера
-├── db_handler/             # Работа с БД
-│   ├── main.py             # Парсинг и функции БД
-│   ├── http_client.py      # Lifecycle manager для HTTP клиента
-│   ├── services/           # Сервисы
-│   │   ├── repository.py   # CRUD операции (SQLAlchemy)
-│   │   ├── persistense.py  # Bulk insert через SQLAlchemy
-│   │   ├── outbox_service.py      # Добавление в очередь вебхуков
-│   │   ├── outbox_processor.py    # Обработка очереди вебхуков
-│   │   └── webhook_serializer.py  # Сериализация для вебхуков
-│   ├── db/                 # Модели и движок БД
-│   │   ├── models.py       # SQLAlchemy модели (Product, User, Settings, WebhookOutbox)
+├── config.py               # Centralized configuration (pydantic-settings)
+├── aiogram_run.py          # Bot entry point
+├── create_bot.py           # Bot and dispatcher creation
+├── db_handler/             # Database operations
+│   ├── main.py             # Parsing and DB functions
+│   ├── http_client.py      # HTTP client lifecycle manager
+│   ├── services/           # Services
+│   │   ├── repository.py   # CRUD operations (SQLAlchemy)
+│   │   ├── persistense.py  # Bulk insert via SQLAlchemy
+│   │   ├── outbox_service.py      # Webhook queue management
+│   │   ├── outbox_processor.py    # Webhook queue processing
+│   │   └── webhook_serializer.py  # Webhook serialization
+│   ├── db/                 # Models and DB engine
+│   │   ├── models.py       # SQLAlchemy models (Product, User, Settings, WebhookOutbox)
 │   │   └── engine.py       # Async/sync engine, SessionLocal
-│   └── scheduler/          # Планировщик задач
+│   └── scheduler/          # Task scheduler
 │       └── outbox_scheduler.py
-├── parser/                 # Парсинг OLX
-│   ├── selectors.py        # Конфигурация селекторов
-│   ├── selector_utils.py   # Утилиты поиска с fallback
-│   ├── normalizer.py       # Нормализация данных
-│   └── main_parser.py      # Основной парсер
-├── handlers/               # Обработчики команд
-│   └── start.py            # Команды бота
-├── middlewares/            # Промежуточное ПО
-│   └── db_session.py       # Middleware для инъекции SQLAlchemy сессии
-├── filters/                # Фильтры сообщений
-│   └── is_admin.py         # Фильтр проверки прав админа
-├── keyboards/              # Inline-клавиатуры
-├── export/                 # Экспорт данных (Excel)
-├── utils/                  # Утилиты
-│   └── exceptions.py       # Типы исключений для обработки ошибок
-├── scripts/                # Скрипты утилит
-├── alembic/                # Миграции Alembic
-│   └── versions/           # Файлы миграций
-└── tests/                  # Тесты pytest
+├── parser/                 # OLX parsing
+│   ├── selectors.py        # Selector configuration
+│   ├── selector_utils.py   # Fallback search utilities
+│   ├── normalizer.py       # Data normalization
+│   └── main_parser.py      # Main parser
+├── handlers/               # Command handlers
+│   └── start.py            # Bot commands
+├── middlewares/            # Middleware
+│   └── db_session.py       # SQLAlchemy session injection middleware
+├── filters/                # Message filters
+│   └── is_admin.py         # Admin rights filter
+├── keyboards/              # Inline keyboards
+├── export/                 # Data export (Excel)
+├── utils/                  # Utilities
+│   └── exceptions.py       # Exception types for error handling
+├── scripts/                # Utility scripts
+├── alembic/                # Alembic migrations
+│   └── versions/           # Migration files
+└── tests/                  # pytest tests
 ```
 
-### Ключевые компоненты
+### Key Components
 
-#### База данных (SQLAlchemy ORM)
+#### Database Layer (SQLAlchemy ORM)
 
-Все операции с БД выполняются через SQLAlchemy ORM:
-- **AsyncSession** — асинхронные сессии для всех операций
-- **Bulk insert** — через `insert().on_conflict_do_update()` для производительности
-- **Миграции** — через Alembic для версионирования схемы
+All database operations are performed via SQLAlchemy ORM:
+- **AsyncSession** — async sessions for all operations
+- **Bulk insert** — via `insert().on_conflict_do_update()` for performance
+- **Migrations** — via Alembic for schema versioning
 
-#### HTTP клиент
+#### HTTP Client
 
-- Глобальный `httpx.AsyncClient` управляется через lifecycle manager
-- Семафор ограничивает одновременные запросы (по умолчанию 5)
-- Корректное закрытие при shutdown бота
+- Global `httpx.AsyncClient` managed via lifecycle manager
+- Semaphore limits concurrent requests (default 5)
+- Proper cleanup on bot shutdown
 
 #### Middleware
 
-`DbSessionMiddleware` автоматически создает SQLAlchemy сессию для каждого handler'а и передает её через `data["session"]`.
+`DbSessionMiddleware` automatically creates a SQLAlchemy session for each handler and passes it via `data["session"]`.
 
 #### Outbox Pattern
 
-Надежная доставка вебхуков:
-1. События сохраняются в `webhook_outbox` таблицу
-2. Фоновый процесс (каждые 15 сек) обрабатывает очередь
-3. Exponential backoff при ошибках
-4. Статусы: PENDING → SENT/FAILED/DEAD
+Reliable webhook delivery:
+1. Events are saved to `webhook_outbox` table
+2. Background process (every 15s) processes the queue
+3. Exponential backoff on errors
+4. Statuses: PENDING → SENT/FAILED/DEAD
 
 ---
 
-## Парсинг
+## Parsing
 
-### Устойчивые селекторы
+### Resilient Selectors
 
-Парсер использует **fallback-селекторы** для устойчивости к изменениям вёрстки:
+The parser uses **fallback selectors** for resilience against layout changes:
 
-1. **data-testid** (приоритет 1) — стабильные атрибуты
-2. **CSS классы** (приоритет 2) — могут меняться
-3. **Семантические селекторы** (приоритет 3) — теги
+1. **data-testid** (priority 1) — stable attributes
+2. **CSS classes** (priority 2) — can change
+3. **Semantic selectors** (priority 3) — tags
 
-### Найденные селекторы
+### Found Selectors
 
-#### Страница категории
+#### Category Page
 
-| Элемент | data-testid | CSS класс |
+| Element | data-testid | CSS class |
 |---------|-------------|-----------|
-| Контейнер списка | `listing-grid` | `css-j0t2x2` |
-| Карточка товара | `l-card` | `css-1sw7q4x` |
-| Заголовок | `ad-card-title` | `css-u2ayx9` |
-| Цена | `ad-price` | `css-blr5zl` |
-| Локация | `location-date` | `css-3cz5o2` |
-| Пагинация | `pagination-list` | — |
+| List container | `listing-grid` | `css-j0t2x2` |
+| Product card | `l-card` | `css-1sw7q4x` |
+| Title | `ad-card-title` | `css-u2ayx9` |
+| Price | `ad-price` | `css-blr5zl` |
+| Location | `location-date` | `css-3cz5o2` |
+| Pagination | `pagination-list` | — |
 
-### Обновление селекторов
+### Updating Selectors
 
-Если сайт изменился:
+If the site changes:
 
 ```bash
-# 1. Исследовать новую структуру
+# 1. Research new structure
 python scripts/research_selectors.py
 
-# 2. Обновить parser/selectors.py
+# 2. Update parser/selectors.py
 
-# 3. Протестировать
+# 3. Test
 python scripts/test_selectors.py
 ```
 
 ---
 
-## Вебхуки
+## Webhooks
 
-### Отправка данных
+### Sending Data
 
-Данные отправляются через **outbox pattern**:
+Data is sent via **outbox pattern**:
 
-1. Данные сохраняются в таблицу `webhook_outbox`
-2. Фоновый процесс (каждые 15 сек) отправляет данные
-3. При ошибке — повторные попытки (exponential backoff)
+1. Data is saved to `webhook_outbox` table
+2. Background process (every 15s) sends data
+3. On error — retries (exponential backoff)
 
-### Обновление webhook URL
+### Updating Webhook URL
 
-Если обновили `WEBHOOK_URL` в `.env`:
+If you updated `WEBHOOK_URL` in `.env`:
 
 ```bash
-# Очистить очередь старых вебхуков
+# Clear old webhook queue
 python scripts/clear_webhook_queue.py
 ```
 
 ---
 
-## Тестирование
+## Testing
 
-### Запуск всех тестов
+### Run All Tests
 
 ```bash
 pytest
 ```
 
-### Запуск с покрытием
+### Run with Coverage
 
 ```bash
 pytest --cov=. --cov-report=html
 ```
 
-### Запуск конкретных тестов
+### Run Specific Tests
 
 ```bash
 pytest tests/test_selectors.py -v
 pytest tests/test_webhook_serializer.py -v
 ```
 
-### Структура тестов
+### Test Structure
 
 ```
 tests/
-├── conftest.py              # Фикстуры
-├── test_selectors.py        # Тесты селекторов
-├── test_selector_utils.py   # Тесты утилит поиска
-├── test_webhook_serializer.py # Тесты сериализации
-├── test_latest_handler.py   # Тесты /latest handler
-└── test_parser.py           # Тесты парсера
+├── conftest.py              # Fixtures
+├── test_selectors.py        # Selector tests
+├── test_selector_utils.py   # Search utility tests
+├── test_webhook_serializer.py # Serialization tests
+├── test_latest_handler.py   # /latest handler tests
+└── test_parser.py           # Parser tests
 ```
 
 ---
 
-## Утилиты
+## Utilities
 
 ### `scripts/research_selectors.py`
 
-Исследует структуру OLX.uz и находит стабильные селекторы.
+Researches OLX.uz structure and finds stable selectors.
 
-**Использование:**
+**Usage:**
 ```bash
 python scripts/research_selectors.py
 ```
 
-**Результат:**
-- `research_main_page.html` — главная страница
-- `research_category_page.html` — страница категории
-- `research_product_page.html` — страница товара
+**Output:**
+- `research_main_page.html` — main page
+- `research_category_page.html` — category page
+- `research_product_page.html` — product page
 
 ### `scripts/clear_webhook_queue.py`
 
-Очищает очередь pending вебхуков из БД.
+Clears pending webhooks from the database.
 
-**Использование:**
+**Usage:**
 ```bash
 python scripts/clear_webhook_queue.py
 ```
 
 ---
 
-## Структура проекта
+## Project Structure
 
-### База данных
+### Database
 
-#### Таблица `products`
+#### `products` Table
 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | Integer | ID записи |
-| title | String | Заголовок объявления |
-| price | Float | Цена |
-| currency | String | Валюта (UZS/USD) |
-| location | String | Локация |
-| precise_location | String | Точная локация |
-| url | String | URL объявления (уникальный) |
-| category | String | Категория |
-| created_at | DateTime | Дата создания |
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Integer | Record ID |
+| title | String | Listing title |
+| price | Float | Price |
+| currency | String | Currency (UZS/USD) |
+| location | String | Location |
+| precise_location | String | Precise location |
+| url | String | Listing URL (unique) |
+| category | String | Category |
+| created_at | DateTime | Creation date |
 
-#### Таблица `webhook_outbox`
+#### `webhook_outbox` Table
 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | UUID | ID события |
-| target_url | String | URL вебхука |
-| payload | JSON | Данные для отправки |
+| Field | Type | Description |
+|-------|------|-------------|
+| id | UUID | Event ID |
+| target_url | String | Webhook URL |
+| payload | JSON | Data to send |
 | status | Enum | PENDING/SENT/DEAD |
-| attempts | Integer | Количество попыток |
-| next_retry_at | DateTime | Следующая попытка |
-| created_at | DateTime | Дата создания |
+| attempts | Integer | Attempt count |
+| next_retry_at | DateTime | Next retry time |
+| created_at | DateTime | Creation date |
 
-#### Таблица `users`
+#### `users` Table
 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| id | Integer | ID записи |
-| tg_id | BigInteger | Telegram ID (поддержка больших ID) |
+| Field | Type | Description |
+|-------|------|-------------|
+| id | Integer | Record ID |
+| tg_id | BigInteger | Telegram ID (supports large IDs) |
 | username | String(255) | Username |
-| is_admin | Boolean | Флаг админа |
-| is_banned | Boolean | Флаг бана |
-| ban_reason | Text | Причина бана |
-| created_at | DateTime | Дата регистрации |
+| is_admin | Boolean | Admin flag |
+| is_banned | Boolean | Ban flag |
+| ban_reason | Text | Ban reason |
+| created_at | DateTime | Registration date |
 
-#### Таблица `settings`
+#### `settings` Table
 
-| Поле | Тип | Описание |
-|------|-----|----------|
-| key | String(255) | Ключ настройки (PK) |
-| value | Text | Значение настройки |
+| Field | Type | Description |
+|-------|------|-------------|
+| key | String(255) | Setting key (PK) |
+| value | Text | Setting value |
 
 ---
 
-## Миграции
+## Migrations
 
-### Создание новой миграции
+### Create New Migration
 
 ```bash
-alembic revision --autogenerate -m "описание изменений"
+alembic revision --autogenerate -m "description of changes"
 ```
 
-### Применение миграций
+### Apply Migrations
 
 ```bash
-# Применить все миграции
+# Apply all migrations
 alembic upgrade head
 
-# Откатить одну миграцию
+# Rollback one migration
 alembic downgrade -1
 
-# Посмотреть текущую версию
+# View current version
 alembic current
 
-# История миграций
+# Migration history
 alembic history
 ```
 
-### Важные миграции
+### Important Migrations
 
-- `41025f4c2198` — Регистрация существующих таблиц в Alembic
-- `0d757a1f5c48` — Обновление модели User для BigInteger tg_id
+- `41025f4c2198` — Register existing tables in Alembic
+- `0d757a1f5c48` — Update User model for BigInteger tg_id
 
-### Основные модули
+### Main Modules
 
 #### `config.py`
 
-Централизованная конфигурация с валидацией через pydantic-settings:
-- Автоматическая загрузка из `.env`
-- Валидация обязательных полей при старте
-- Type-safe доступ к настройкам
+Centralized configuration with validation via pydantic-settings:
+- Automatic loading from `.env`
+- Validation of required fields on startup
+- Type-safe access to settings
 
 #### `db_handler/main.py`
 
-Функции парсинга:
-- `parse_products_from_category()` — парсинг списка товаров
-- `parse_product_details()` — парсинг деталей товара
-- `extract_products_links()` — извлечение ссылок
-- `get_current_usd_rate()` — курс доллара
+Parsing functions:
+- `parse_products_from_category()` — parse product list
+- `parse_product_details()` — parse product details
+- `extract_products_links()` — extract links
+- `get_current_usd_rate()` — USD exchange rate
 
 #### `db_handler/services/repository.py`
 
-CRUD операции через SQLAlchemy:
-- `list_latest_products()` — последние объявления
-- `list_products_for_export()` — данные для экспорта
-- `upsert_user()` — создание/обновление пользователя
-- `get_user_by_tg_id()` — поиск по Telegram ID
-- `mark_admin_by_username()` — назначение админа
-- `set_ban_with_reason()` — бан пользователя
+CRUD operations via SQLAlchemy:
+- `list_latest_products()` — latest listings
+- `list_products_for_export()` — data for export
+- `upsert_user()` — create/update user
+- `get_user_by_tg_id()` — search by Telegram ID
+- `mark_admin_by_username()` — assign admin
+- `set_ban_with_reason()` — ban user
 
 #### `db_handler/http_client.py`
 
-Lifecycle manager для HTTP клиента:
-- `get_http_client()` — получить глобальный клиент
-- `close_http_client()` — закрыть клиент при shutdown
+Lifecycle manager for HTTP client:
+- `get_http_client()` — get global client
+- `close_http_client()` — close client on shutdown
 
 #### `parser/selectors.py`
 
-Конфигурация селекторов:
-- `CATEGORY_PAGE_SELECTORS` — для страницы категории
-- `PRODUCT_PAGE_SELECTORS` — для страницы товара
+Selector configuration:
+- `CATEGORY_PAGE_SELECTORS` — for category page
+- `PRODUCT_PAGE_SELECTORS` — for product page
 
 #### `parser/selector_utils.py`
 
-Утилиты:
-- `find_with_fallback()` — поиск с fallback
-- `get_text_fallback()` — извлечение текста
-- `validate_selectors()` — валидация селекторов
+Utilities:
+- `find_with_fallback()` — search with fallback
+- `get_text_fallback()` — text extraction
+- `validate_selectors()` — selector validation
 
 #### `db_handler/services/outbox_service.py`
 
-- `enqueue_webhook()` — добавить вебхук в очередь
+- `enqueue_webhook()` — add webhook to queue
 
 #### `db_handler/services/outbox_processor.py`
 
-- `process_outbox()` — обработка очереди (каждые 15 сек)
-- `deliver_event()` — доставка одного события
+- `process_outbox()` — process queue (every 15s)
+- `deliver_event()` — deliver single event
 
 #### `handlers/start.py`
 
-Обработчики команд:
+Command handlers:
 - `latest_command_handler()` — `/latest`
 - `parse_command_handler()` — `/parse`
 - `report_command_handler()` — `/report`
-- Все админские команды
+- All admin commands
 
 #### `middlewares/db_session.py`
 
-Middleware для автоматической инъекции SQLAlchemy сессии в handlers.
+Middleware for automatic SQLAlchemy session injection into handlers.
 
 #### `filters/is_admin.py`
 
-Фильтр проверки прав администратора (создает собственную сессию, так как выполняется до middleware).
+Admin rights filter (creates its own session since filters execute before middleware).
 
 ---
 
-## Лицензия
+## License
 
 MIT
 
