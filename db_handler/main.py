@@ -29,30 +29,30 @@ semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
 
 def normalize_listing_url(raw_url: str) -> str:
-	"""Возвращает канонический URL объявления без параметров запроса и фрагментов."""
-	parts = urlsplit(raw_url)
-	path = parts.path.rstrip("/") or parts.path
-	return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
+    """Возвращает канонический URL объявления без параметров запроса и фрагментов."""
+    parts = urlsplit(raw_url)
+    path = parts.path.rstrip("/") or parts.path
+    return urlunsplit((parts.scheme, parts.netloc, path, "", ""))
 
 
 async def fetch(url: str) -> str | None:
-	"""Асинхронное скачивание страницы с ограничением через семафор."""
-	async with semaphore:
-		try:
-			client = get_http_client()
-			resp = await client.get(url)
-			resp.raise_for_status()
-			# Короткая пауза между запросами внутри семафора
-			await asyncio.sleep(0.1)
-			return resp.text
-		except httpx.HTTPError as e:
-			logger.error("Ошибка HTTP запроса %s: %s", url, e)
-			return None
-		except Exception as e:
-			if isinstance(e, (KeyboardInterrupt, SystemExit)):
-				raise
-			logger.error("Неожиданная ошибка при запросе %s: %s", url, e, exc_info=True)
-			return None
+    """Асинхронное скачивание страницы с ограничением через семафор."""
+    async with semaphore:
+        try:
+            client = get_http_client()
+            resp = await client.get(url)
+            resp.raise_for_status()
+            # Короткая пауза между запросами внутри семафора
+            await asyncio.sleep(0.1)
+            return resp.text
+        except httpx.HTTPError as e:
+            logger.error("Ошибка HTTP запроса %s: %s", url, e)
+            return None
+        except Exception as e:
+            if isinstance(e, (KeyboardInterrupt, SystemExit)):
+                raise
+            logger.error("Неожиданная ошибка при запросе %s: %s", url, e, exc_info=True)
+            return None
 
 
 def get_text_or_default(parent: BeautifulSoup | bs4.Tag, tag, cls: str, default="None"):
@@ -97,60 +97,60 @@ def get_text_or_default(parent: BeautifulSoup | bs4.Tag, tag, cls: str, default=
 
 
 async def parse_category_urls(url : str) -> list[str]:
-	category_urls = []
+    category_urls = []
 
-	text = await fetch(url)
-	if not text:
-		return category_urls
+    text = await fetch(url)
+    if not text:
+        return category_urls
 
-	soup = bs4.BeautifulSoup(text, "html.parser")
-	category = soup.find_all("div", class_="css-1gw3rcq")
-	if not category:
-		return category_urls
-	link_tag = category[0].find_all("a")
-	for link in link_tag:
-		href = link.get("href")
-		if not href:
-			continue
-		# используем urljoin для корректной сборки URL
-		if link_tag[-1] != link:
-			category_urls.append(urljoin(url, href))
-		else:
-			category_urls.append(
-				href if href.startswith("http") else urljoin(url, href)
-			)
-	return category_urls
+    soup = bs4.BeautifulSoup(text, "html.parser")
+    category = soup.find_all("div", class_="css-1gw3rcq")
+    if not category:
+        return category_urls
+    link_tag = category[0].find_all("a")
+    for link in link_tag:
+        href = link.get("href")
+        if not href:
+            continue
+        # используем urljoin для корректной сборки URL
+        if link_tag[-1] != link:
+            category_urls.append(urljoin(url, href))
+        else:
+            category_urls.append(
+                href if href.startswith("http") else urljoin(url, href)
+            )
+    return category_urls
 
 
 def get_total_pages(soup : bs4.BeautifulSoup) -> int:
-	try:
-		# Ищем контейнер с пагинацией
-		pagination_container = soup.find(
-			"ul", {"data-testid": "pagination-list"}
-		)
-		if not pagination_container:
-			logger.info("Пагинация не найдена, считаем, что страница одна.")
-			return 1
+    try:
+        # Ищем контейнер с пагинацией
+        pagination_container = soup.find(
+            "ul", {"data-testid": "pagination-list"}
+        )
+        if not pagination_container:
+            logger.info("Пагинация не найдена, считаем, что страница одна.")
+            return 1
 
-		#Находим все ссылки на страницы
-		links = pagination_container.find_all("a")
-		if not links:
-			return 1
+        #Находим все ссылки на страницы
+        links = pagination_container.find_all("a")
+        if not links:
+            return 1
 
-		#берем последний элемент
-		last_page_text = links[-1].get_text(strip=True)
+        #берем последний элемент
+        last_page_text = links[-1].get_text(strip=True)
 
-		# Если в конце стоит стрелочка ">", берем предпоследний элемент
-		if not last_page_text.isdigit():
-			last_page_text = links[-2].get_text(strip=True)
+        # Если в конце стоит стрелочка ">", берем предпоследний элемент
+        if not last_page_text.isdigit():
+            last_page_text = links[-2].get_text(strip=True)
 
-		total_pages = int(last_page_text)
-		logger.info("Найдено страниц для парсинга: %s", total_pages)
-		return total_pages
+        total_pages = int(last_page_text)
+        logger.info("Найдено страниц для парсинга: %s", total_pages)
+        return total_pages
 
-	except Exception as e:
-		logger.error("Ошибка при определении количества страниц: %s", e)
-		return 1
+    except Exception as e:
+        logger.error("Ошибка при определении количества страниц: %s", e)
+        return 1
 
 
 async def parse_products_from_category(category_url: str) -> list[bs4.element.Tag]:
@@ -387,146 +387,146 @@ async def parse_product_details(ad_url, usd_rate: int, category: str) -> dict:
 
 
 def parse_price_value(text: str) -> tuple[int | None, str]:
-	"""Извлекает числовое значение цены и валюту из текстовой строки."""
-	if not text:
-		return None, "UNKNOWN"
+    """Извлекает числовое значение цены и валюту из текстовой строки."""
+    if not text:
+        return None, "UNKNOWN"
 
-	s = text.lower().replace("\u00a0", " ").strip()
+    s = text.lower().replace("\u00a0", " ").strip()
 
-	if "договор" in s or "торг" in s or "по договорённости" in s:
-		return None, "NEGOTIABLE"
+    if "договор" in s or "торг" in s or "по договорённости" in s:
+        return None, "NEGOTIABLE"
 
-	m = re.search(r"(\d{1,3}(?:[\s]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)", s)
-	if not m:
-		return None, "UNKNOWN"
+    m = re.search(r"(\d{1,3}(?:[\s]\d{3})*(?:[.,]\d+)?|\d+(?:[.,]\d+)?)", s)
+    if not m:
+        return None, "UNKNOWN"
 
-	num_str = m.group(1).replace(" ", "").replace(",", ".")
-	try:
-		if "." in num_str:
-			value = float(num_str)
-		else:
-			value = int(num_str)
-	except InvalidOperation:
-		return None, "UNKNOWN"
+    num_str = m.group(1).replace(" ", "").replace(",", ".")
+    try:
+        if "." in num_str:
+            value = float(num_str)
+        else:
+            value = int(num_str)
+    except InvalidOperation:
+        return None, "UNKNOWN"
 
-	if "$" in s or "usd" in s or "y.e" in s or "у.е" in s:
-		currency = "USD"
-	else:
-		currency = "UZS"
+    if "$" in s or "usd" in s or "y.e" in s or "у.е" in s:
+        currency = "USD"
+    else:
+        currency = "UZS"
 
-	return value, currency
+    return value, currency
 
 
 async def get_current_usd_rate() -> int:
-	"""Получает курс USD/UZS один раз."""
-	url = "https://v6.exchangerate-api.com/v6/d8aad1c4d700d6cd1dc68e14/latest/USD"
-	try:
+    """Получает курс USD/UZS один раз."""
+    url = "https://v6.exchangerate-api.com/v6/d8aad1c4d700d6cd1dc68e14/latest/USD"
+    try:
 
 
-		# Используем твой fetch, который возвращает строку
-		text_response = await fetch(url)
-		if not text_response:
-			logger.error("Пустой ответ от API курсов")
-			return int("12800")  # Резервный курс, если API недоступен
+        # Используем твой fetch, который возвращает строку
+        text_response = await fetch(url)
+        if not text_response:
+            logger.error("Пустой ответ от API курсов")
+            return int("12800")  # Резервный курс, если API недоступен
 
-		data = json.loads(text_response)  # Парсим строку в JSON
+        data = json.loads(text_response)  # Парсим строку в JSON
 
-		if data.get("result") == "success":
-			rate = data["conversion_rates"].get("UZS")
-			logger.info(f"Актуальный курс доллара: {rate}")
-			return int(rate)
-		else:
-			logger.error("Сервис курсов вернул ошибку")
-			return int("12800")
+        if data.get("result") == "success":
+            rate = data["conversion_rates"].get("UZS")
+            logger.info(f"Актуальный курс доллара: {rate}")
+            return int(rate)
+        else:
+            logger.error("Сервис курсов вернул ошибку")
+            return int("12800")
 
-	except Exception as e:
-		logger.error(f"Ошибка получения курса: {e}")
-		return int("12800") # Возвращаем примерный курс при ошибке
+    except Exception as e:
+        logger.error(f"Ошибка получения курса: {e}")
+        return int("12800") # Возвращаем примерный курс при ошибке
 
 
 class Query:
-	def __init__(self):
-		self.filters = []
-		self._results = []
+    def __init__(self):
+        self.filters = []
+        self._results = []
 
-	def where(self, rule):
-		self.filters.append(rule)
-		return self
+    def where(self, rule):
+        self.filters.append(rule)
+        return self
 
-	def execute(self, items):
-		self._results = []
-		for item in items:
-			if all(f(item) for f in self.filters):
-				self._results.append(item)
-				yield item
+    def execute(self, items):
+        self._results = []
+        for item in items:
+            if all(f(item) for f in self.filters):
+                self._results.append(item)
+                yield item
 
-	def to_json(self, path):
-		with open(path, "w", encoding="utf-8") as f:
-			json.dump(self._results, f, ensure_ascii=False, indent=2)
+    def to_json(self, path):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self._results, f, ensure_ascii=False, indent=2)
 
 
 class Filters:
-	def __init__(self):
-		self.rules = []
+    def __init__(self):
+        self.rules = []
 
-	def price_below(self, max_price_uzs):
-		def _f(item):
-			# Поддерживаем и сырые, и нормализованные данные
-			value = item.get("price") or item.get("original_price")
-			currency = item.get("currency")
-			if value is None:
-				return False
+    def price_below(self, max_price_uzs):
+        def _f(item):
+            # Поддерживаем и сырые, и нормализованные данные
+            value = item.get("price") or item.get("original_price")
+            currency = item.get("currency")
+            if value is None:
+                return False
 
-			# Если это нормализованная цена в сумах
-			if "price_uzs" in item and item["price_uzs"] is not None:
-				return item["price_uzs"] <= max_price_uzs * 12800 # условно в сумы если max_price в у.е.
-				# Или если max_price_uzs уже в сумах:
-				# return item["price_uzs"] <= max_price_uzs
+            # Если это нормализованная цена в сумах
+            if "price_uzs" in item and item["price_uzs"] is not None:
+                return item["price_uzs"] <= max_price_uzs * 12800 # условно в сумы если max_price в у.е.
+                # Или если max_price_uzs уже в сумах:
+                # return item["price_uzs"] <= max_price_uzs
 
-			if currency == "USD":
-				value *= 12800  # примерный курс
+            if currency == "USD":
+                value *= 12800  # примерный курс
 
-			return value <= max_price_uzs
+            return value <= max_price_uzs
 
-		self.rules.append(_f)
-		return self
+        self.rules.append(_f)
+        return self
 
-	def city(self, city):
-		def _f(item):
-			location = item.get("location")
-			if not location or not isinstance(location, str):
-				return False
-			return city.lower() in location.lower()
-		self.rules.append(_f)
-		return self
+    def city(self, city):
+        def _f(item):
+            location = item.get("location")
+            if not location or not isinstance(location, str):
+                return False
+            return city.lower() in location.lower()
+        self.rules.append(_f)
+        return self
 
-	def keyword(self, word):
-		def _f(item):
-			title = item.get("title")
-			if not title or not isinstance(title, str):
-				return False
-			return word.lower() in title.lower()
-		self.rules.append(_f)
-		return self
+    def keyword(self, word):
+        def _f(item):
+            title = item.get("title")
+            if not title or not isinstance(title, str):
+                return False
+            return word.lower() in title.lower()
+        self.rules.append(_f)
+        return self
 
-	def date(self, text):
-		def _f(item):
-			date_val = item.get("date")
-			if not date_val or not isinstance(date_val, str):
-				return False
-			return text.lower() in date_val.lower()
-		self.rules.append(_f)
-		return self
+    def date(self, text):
+        def _f(item):
+            date_val = item.get("date")
+            if not date_val or not isinstance(date_val, str):
+                return False
+            return text.lower() in date_val.lower()
+        self.rules.append(_f)
+        return self
 
-	def match(self, item):
-		return all(rule(item) for rule in self.rules)
+    def match(self, item):
+        return all(rule(item) for rule in self.rules)
 
 
 filters = (
-	Filters()
-	#.price_below(1000_000)
-	#.city("Ташкент")
-	#.date("Сегодня")
+    Filters()
+    #.price_below(1000_000)
+    #.city("Ташкент")
+    #.date("Сегодня")
 )
 
 results = []
@@ -556,39 +556,39 @@ def validate_selectors_on_page(page_type: str, html_content: str) -> dict[str, b
 
 
 async def run_parsing():
-	categories = await parse_category_urls(main_url)
-	url_dict = {urlparse(url).path: url for url in categories}
-	user_input = input("Введите путь категории для парсинга (например, /nedvizhimost/): ").strip()
-	if user_input not in url_dict:
-		logger.warning("Неверный путь категории: %s", user_input)
-		return
-	target_category = url_dict[user_input]
-	logger.info("Начинаем сбор товаров...")
+    categories = await parse_category_urls(main_url)
+    url_dict = {urlparse(url).path: url for url in categories}
+    user_input = input("Введите путь категории для парсинга (например, /nedvizhimost/): ").strip()
+    if user_input not in url_dict:
+        logger.warning("Неверный путь категории: %s", user_input)
+        return
+    target_category = url_dict[user_input]
+    logger.info("Начинаем сбор товаров...")
 
-	# 1. Сначала получаем курс (1 запрос)
-	usd_rate = await get_current_usd_rate()
-	products = await parse_products_from_category(target_category)
+    # 1. Сначала получаем курс (1 запрос)
+    usd_rate = await get_current_usd_rate()
+    products = await parse_products_from_category(target_category)
 
-	product_links = extract_products_links(products)
-	logger.info(f"Найдено {len(product_links)} объявлений.")
+    product_links = extract_products_links(products)
+    logger.info(f"Найдено {len(product_links)} объявлений.")
 
-	# 2. Передаем usd_rate внутрь каждой задачи
-	detail_tasks = [parse_product_details(link, usd_rate, target_category)
-					for link in product_links]
+    # 2. Передаем usd_rate внутрь каждой задачи
+    detail_tasks = [parse_product_details(link, usd_rate, target_category)
+                    for link in product_links]
 
-	all_details = await asyncio.gather(*detail_tasks)
+    all_details = await asyncio.gather(*detail_tasks)
 
-	for data in all_details:
-		if data and filters.match(data):
-			logger.info("Найден товар: %s", data.get("title"))
+    for data in all_details:
+        if data and filters.match(data):
+            logger.info("Найден товар: %s", data.get("title"))
 
 # Запуск программы
 if __name__ == "__main__":
-	try:
-		asyncio.run(run_parsing())
-	except KeyboardInterrupt:
-		pass
-	finally:
-		# Закрытие клиента отключено:
-		# при завершении возникает RuntimeError "Event loop is closed".
-		logger.info("Парсинг завершен")
+    try:
+        asyncio.run(run_parsing())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        # Закрытие клиента отключено:
+        # при завершении возникает RuntimeError "Event loop is closed".
+        logger.info("Парсинг завершен")

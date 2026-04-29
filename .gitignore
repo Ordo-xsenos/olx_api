@@ -70,3 +70,4 @@ local_settings.py
 cython_debug/
 
 .codexrc
+.codex
